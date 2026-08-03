@@ -43,7 +43,52 @@ export function getTotalFreeMinutes(
   const waking = getTotalWakingMinutes(wakeTime, sleepTime);
   const fixed = getTotalFixedMinutes(blocks);
   const buffer = getTransitionBufferMinutes(blocks);
-  return Math.max(0, waking - fixed - buffer);
+  const meals = 45;
+  return Math.max(0, waking - fixed - buffer - meals);
+}
+
+export function getFreeMinutesFromNow(
+  sleepTime: string,
+  blocks: FixedBlock[]
+): number {
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const sleepMin = timeToMinutes(sleepTime);
+  if (nowMin >= sleepMin) return 0;
+
+  const remaining = sleepMin - nowMin;
+  const futureBlocks = blocks.filter((b) => timeToMinutes(b.end) > nowMin);
+  const futureFixed = futureBlocks.reduce((sum, b) => {
+    const start = Math.max(timeToMinutes(b.start), nowMin);
+    const end = timeToMinutes(b.end);
+    return sum + (end - start);
+  }, 0);
+  const futureTransitions = futureBlocks.length * 30;
+  const meals = 45;
+  return Math.max(0, remaining - futureFixed - futureTransitions - meals);
+}
+
+export function getCurrentTimeStr(): string {
+  const now = new Date();
+  return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+}
+
+export function getHeavyDayContext(
+  dayName: string,
+  wakeTime: string,
+  sleepTime: string,
+  blocks: FixedBlock[]
+): string | null {
+  const lower = dayName.toLowerCase();
+  if (!HEAVY_DAYS.includes(lower)) return null;
+
+  const windows = getFreeWindows(wakeTime, sleepTime, blocks);
+  const bigWindows = windows.filter((w) => w.durationMinutes >= 60);
+  if (bigWindows.length === 0) return 'Heavy day — no usable windows for tasks';
+
+  const totalUsable = bigWindows.reduce((s, w) => s + w.durationMinutes, 0);
+  const best = bigWindows.sort((a, b) => b.durationMinutes - a.durationMinutes)[0];
+  return `Heavy day — ${minutesToHoursDisplay(totalUsable)} usable (${formatTimeDisplay(best.start)}–${formatTimeDisplay(best.end)})`;
 }
 
 export function getFreeWindows(

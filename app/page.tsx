@@ -17,7 +17,9 @@ import {
   formatDate,
   getDateString,
   getTodayBlocks,
-  getTotalFreeMinutes,
+  getFreeMinutesFromNow,
+  getDayName,
+  getHeavyDayContext,
 } from '@/lib/schedule';
 import CapacityBar from '@/components/ui/CapacityBar';
 import BottomSheet from '@/components/ui/BottomSheet';
@@ -201,7 +203,9 @@ export default function TodayPage() {
 
   const settings = getSettings();
   const blocks = getTodayBlocks(settings);
-  const freeMinutes = getTotalFreeMinutes(settings.wakeTime, settings.sleepTime, blocks);
+  const freeMinutes = getFreeMinutesFromNow(settings.sleepTime, blocks);
+  const dayName = getDayName();
+  const heavyDayContext = getHeavyDayContext(dayName, settings.wakeTime, settings.sleepTime, blocks);
 
   return (
     <div className="pb-20">
@@ -264,6 +268,7 @@ export default function TodayPage() {
           onDeleteTask={handleDeleteTask}
           onAnalyze={handleAnalyze}
           loading={loading}
+          heavyDayContext={heavyDayContext}
         />
       )}
 

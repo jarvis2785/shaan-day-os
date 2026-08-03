@@ -73,10 +73,22 @@ Scheduling Rules: ${JSON.stringify(context.schedulingRules)}
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const result = JSON.parse(cleaned);
 
-    // Enforce label thresholds client-side — don't trust the model's label
+    // Enforce label thresholds — don't trust the model's label
     const pct = result.dayLoadPercent ?? 0;
     result.dayLoadLabel =
       pct <= 60 ? 'CLEAR' : pct <= 85 ? 'TIGHT' : pct <= 100 ? 'LOADED' : 'OVERLOADED';
+
+    // Fix #5: Remove overflow tasks that are already in the schedule
+    if (result.schedule && result.overflow) {
+      const scheduledIds = new Set(result.schedule.map((b: any) => b.id));
+      result.overflow = result.overflow.filter((o: any) => !scheduledIds.has(o.id));
+      result.stats.tasksOverflow = result.overflow.length;
+    }
+
+    // Fix #7: Fill timeline gaps with labeled buffer blocks
+    if (result.schedule) {
+      result.schedule = fillTimelineGaps(result.schedule, input.user.wakeTime, input.user.sleepTime);
+    }
 
     return NextResponse.json(result);
   } catch (error) {
@@ -123,18 +135,6 @@ function generateFallbackAnalysis(input: any) {
 
   const schedule: any[] = [];
   const overflow: any[] = [];
-
-  schedule.push({
-    id: 'wake',
-    name: 'Wake up',
-    start: user.wakeTime,
-    end: user.wakeTime,
-    type: 'wake',
-    category: null,
-    estimatedMinutes: 0,
-    energyType: null,
-    notes: null,
-  });
 
   for (const block of today.fixedBlocks) {
     schedule.push({
@@ -237,19 +237,7 @@ function generateFallbackAnalysis(input: any) {
     }
   }
 
-  schedule.push({
-    id: 'sleep',
-    name: 'Wind down & sleep',
-    start: user.sleepTime,
-    end: user.sleepTime,
-    type: 'sleep',
-    category: null,
-    estimatedMinutes: 0,
-    energyType: null,
-    notes: null,
-  });
-
-  schedule.sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  const filledSchedule = fillTimelineGaps(schedule, user.wakeTime, user.sleepTime);
 
   const loadPercent = Math.min(
     Math.round((totalTaskMinutes / freeMinutes) * 100),
@@ -288,14 +276,70 @@ function generateFallbackAnalysis(input: any) {
       tasksOverflow: overflow.length,
     },
     mentorAssessment: assessment,
-    schedule,
+    schedule: filledSchedule,
     overflow,
-    gymScheduled: schedule.some((b: any) => b.type === 'gym'),
-    gymSlot: schedule.find((b: any) => b.type === 'gym')
-      ? { start: schedule.find((b: any) => b.type === 'gym')!.start, end: schedule.find((b: any) => b.type === 'gym')!.end }
+    gymScheduled: filledSchedule.some((b: any) => b.type === 'gym'),
+    gymSlot: filledSchedule.find((b: any) => b.type === 'gym')
+      ? { start: filledSchedule.find((b: any) => b.type === 'gym')!.start, end: filledSchedule.find((b: any) => b.type === 'gym')!.end }
       : null,
     warnings: [],
   };
+}
+
+function fillTimelineGaps(schedule: any[], wakeTime: string, sleepTime: string): any[] {
+  const sorted = [...schedule]
+    .filter((b) => b.type !== 'wake' && b.type !== 'sleep')
+    .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+
+  const filled: any[] = [];
+  const wakeMin = timeToMin(wakeTime);
+  const sleepMin = timeToMin(sleepTime);
+
+  filled.push({
+    id: 'wake', name: 'Wake up', start: wakeTime, end: wakeTime,
+    type: 'wake', category: null, estimatedMinutes: 0, energyType: null, notes: null,
+  });
+
+  let cursor = wakeMin;
+
+  for (const block of sorted) {
+    const blockStart = timeToMin(block.start);
+    if (blockStart > cursor + 29) {
+      const gapMin = blockStart - cursor;
+      const label = getGapLabel(cursor, blockStart);
+      filled.push({
+        id: `gap-${cursor}`, name: label, start: minutesToTimeStr(cursor), end: minutesToTimeStr(blockStart),
+        type: 'buffer', category: null, estimatedMinutes: gapMin, energyType: null, notes: null,
+      });
+    }
+    filled.push(block);
+    cursor = Math.max(cursor, timeToMin(block.end));
+  }
+
+  if (sleepMin > cursor + 29) {
+    const label = getGapLabel(cursor, sleepMin);
+    filled.push({
+      id: `gap-${cursor}`, name: label, start: minutesToTimeStr(cursor), end: minutesToTimeStr(sleepMin),
+      type: 'buffer', category: null, estimatedMinutes: sleepMin - cursor, energyType: null, notes: null,
+    });
+  }
+
+  filled.push({
+    id: 'sleep', name: 'Wind down & sleep', start: sleepTime, end: sleepTime,
+    type: 'sleep', category: null, estimatedMinutes: 0, energyType: null, notes: null,
+  });
+
+  return filled;
+}
+
+function getGapLabel(startMin: number, endMin: number): string {
+  const mid = (startMin + endMin) / 2;
+  if (startMin >= 7 * 60 && endMin <= 8 * 60) return 'Morning routine';
+  if (mid >= 12 * 60 && mid <= 13.5 * 60) return 'Lunch break';
+  if (mid >= 18 * 60 && mid <= 20 * 60) return 'Dinner & rest';
+  if (startMin >= 21 * 60) return 'Wind down';
+  if (endMin - startMin <= 30) return 'Transit';
+  return 'Free block';
 }
 
 function timeToMin(t: string): number {

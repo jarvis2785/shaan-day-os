@@ -1,7 +1,8 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Task, FixedBlock } from '@/lib/types';
-import { formatTimeDisplay, minutesToHoursDisplay } from '@/lib/schedule';
+import { formatTimeDisplay, minutesToHoursDisplay, getCurrentTimeStr, formatDate } from '@/lib/schedule';
 import TaskCard from '@/components/ui/TaskCard';
 
 interface TaskInputViewProps {
@@ -13,6 +14,7 @@ interface TaskInputViewProps {
   onDeleteTask: (id: string) => void;
   onAnalyze: () => void;
   loading: boolean;
+  heavyDayContext: string | null;
 }
 
 export default function TaskInputView({
@@ -24,9 +26,28 @@ export default function TaskInputView({
   onDeleteTask,
   onAnalyze,
   loading,
+  heavyDayContext,
 }: TaskInputViewProps) {
+  const [now, setNow] = useState(getCurrentTimeStr());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(getCurrentTimeStr()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const highTodayCount = tasks.filter(
+    (t) => t.priority === 'high' && t.deadline === 'today'
+  ).length;
+
   return (
     <div className="space-y-6 animate-fade-in">
+      <div className="text-center py-1">
+        <div className="text-xs text-text-muted font-medium tracking-wider">RIGHT NOW</div>
+        <div className="font-display text-2xl font-bold text-text-primary mt-1">
+          {formatTimeDisplay(now)}
+        </div>
+      </div>
+
       {fixedBlocks.length > 0 && (
         <div>
           <h2 className="text-xs text-text-muted font-semibold tracking-wider mb-3">
@@ -49,10 +70,15 @@ export default function TaskInputView({
       )}
 
       <div className="text-center py-2">
-        <div className="text-xs text-text-muted font-medium tracking-wider">FREE TIME AVAILABLE</div>
+        <div className="text-xs text-text-muted font-medium tracking-wider">FREE TIME FROM NOW</div>
         <div className="font-display text-3xl font-bold text-accent mt-1">
           ~{minutesToHoursDisplay(freeMinutes)}
         </div>
+        {heavyDayContext && (
+          <div className="text-xs text-amber mt-2 font-medium">
+            {heavyDayContext}
+          </div>
+        )}
       </div>
 
       <div className="border-t border-border pt-5">
@@ -77,6 +103,14 @@ export default function TaskInputView({
                 onDelete={onDeleteTask}
               />
             ))}
+          </div>
+        )}
+
+        {highTodayCount >= 3 && (
+          <div className="mt-4 bg-amber/5 border border-amber/15 rounded-btn px-4 py-3">
+            <p className="text-xs text-amber leading-relaxed">
+              Everything can&apos;t be high priority. The AI will decide what actually gets scheduled first.
+            </p>
           </div>
         )}
       </div>
