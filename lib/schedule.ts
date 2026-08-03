@@ -1,6 +1,16 @@
 import { FixedBlock, TimeWindow, DayProfile, UserSettings } from './types';
 import { HEAVY_DAYS, LOW_CAP_DAYS, FREE_DAYS, DAY_NAMES } from './constants';
 
+const IST_TZ = 'Asia/Kolkata';
+
+function getISTMinutes(): number {
+  const timeStr = new Date().toLocaleTimeString('en-GB', {
+    timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
+
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number);
   return h * 60 + m;
@@ -48,12 +58,18 @@ export function getTotalFreeMinutes(
 }
 
 export function getFreeMinutesFromNow(
+  wakeTime: string,
   sleepTime: string,
   blocks: FixedBlock[]
 ): number {
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowMin = getISTMinutes();
+  const wakeMin = timeToMinutes(wakeTime);
   const sleepMin = timeToMinutes(sleepTime);
+
+  if (nowMin < wakeMin) {
+    return getTotalFreeMinutes(wakeTime, sleepTime, blocks);
+  }
+
   if (nowMin >= sleepMin) return 0;
 
   const remaining = sleepMin - nowMin;
@@ -68,9 +84,14 @@ export function getFreeMinutesFromNow(
   return Math.max(0, remaining - futureFixed - futureTransitions - meals);
 }
 
+export function isBeforeWakeTime(wakeTime: string): boolean {
+  return getISTMinutes() < timeToMinutes(wakeTime);
+}
+
 export function getCurrentTimeStr(): string {
-  const now = new Date();
-  return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  return new Date().toLocaleTimeString('en-GB', {
+    timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  });
 }
 
 export function getHeavyDayContext(
@@ -153,7 +174,9 @@ export function getDayProfile(dayName: string): DayProfile {
 }
 
 export function getDayName(date: Date = new Date()): string {
-  return DAY_NAMES[date.getDay()];
+  return date.toLocaleDateString('en-US', {
+    timeZone: IST_TZ, weekday: 'long',
+  }).toLowerCase();
 }
 
 export function getTodayBlocks(settings: UserSettings, date: Date = new Date()): FixedBlock[] {
@@ -163,6 +186,7 @@ export function getTodayBlocks(settings: UserSettings, date: Date = new Date()):
 
 export function formatDate(date: Date = new Date()): string {
   return date.toLocaleDateString('en-US', {
+    timeZone: IST_TZ,
     weekday: 'short',
     day: '2-digit',
     month: 'short',
@@ -170,7 +194,21 @@ export function formatDate(date: Date = new Date()): string {
 }
 
 export function getDateString(date: Date = new Date()): string {
-  return date.toISOString().split('T')[0];
+  return date.toLocaleDateString('en-CA', { timeZone: IST_TZ });
+}
+
+export function getISTTomorrow(): Date {
+  const todayStr = getDateString();
+  const [y, m, d] = todayStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1, 12, 0));
+}
+
+export function getISTStartOfWeekString(): string {
+  const todayStr = getDateString();
+  const dow = DAY_NAMES.indexOf(getDayName());
+  const [y, m, d] = todayStr.split('-').map(Number);
+  const sundayDate = new Date(Date.UTC(y, m - 1, d - dow, 12, 0));
+  return getDateString(sundayDate);
 }
 
 export function getDayLabel(dayName: string): string {

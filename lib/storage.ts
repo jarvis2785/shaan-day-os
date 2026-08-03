@@ -1,6 +1,6 @@
 import { UserSettings, DayPlan, Task } from './types';
 import { DEFAULT_SETTINGS } from './constants';
-import { getDateString } from './schedule';
+import { getDateString, getISTStartOfWeekString } from './schedule';
 
 const SETTINGS_KEY = 'dayos_settings';
 const PLAN_PREFIX = 'dayos_plan_';
@@ -63,11 +63,8 @@ export function getGymDoneThisWeek(): number {
   if (!raw) return 0;
   try {
     const data = JSON.parse(raw);
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-    if (new Date(data.weekStart) < startOfWeek) {
+    const startOfWeekStr = getISTStartOfWeekString();
+    if (data.weekStart < startOfWeekStr) {
       return 0;
     }
     return data.count || 0;
@@ -78,14 +75,11 @@ export function getGymDoneThisWeek(): number {
 
 export function incrementGymDone(): void {
   if (typeof window === 'undefined') return;
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
+  const startOfWeekStr = getISTStartOfWeekString();
   const current = getGymDoneThisWeek();
   localStorage.setItem(
     GYM_WEEK_KEY,
-    JSON.stringify({ weekStart: startOfWeek.toISOString(), count: current + 1 })
+    JSON.stringify({ weekStart: startOfWeekStr, count: current + 1 })
   );
 }
 

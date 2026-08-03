@@ -16,6 +16,8 @@ import {
   getTotalFixedMinutes,
   getTotalWakingMinutes,
   getDayLabel,
+  getDateString,
+  getDayName,
 } from '@/lib/schedule';
 
 export default function WeekPage() {
@@ -24,7 +26,7 @@ export default function WeekPage() {
     {
       dayName: string;
       label: string;
-      date: Date;
+      dateStr: string;
       fixedPercent: number;
       taskPercent: number;
       statusLabel: string;
@@ -36,14 +38,15 @@ export default function WeekPage() {
   useEffect(() => {
     initialize();
     const settings = getSettings();
-    const today = new Date();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
+    const todayDayName = getDayName();
+    const todayDow = DAY_NAMES.indexOf(todayDayName);
+    const now = Date.now();
 
     const data = Array.from({ length: 7 }).map((_, i) => {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      const dayName = DAY_NAMES[date.getDay()];
+      const offset = i - todayDow;
+      const date = new Date(now + offset * 86400000);
+      const dayName = DAY_NAMES[i];
+      const dateStr = getDateString(date);
       const blocks = settings.schedule[dayName] || [];
       const wakingMin = getTotalWakingMinutes(settings.wakeTime, settings.sleepTime);
       const fixedMin = getTotalFixedMinutes(blocks);
@@ -63,8 +66,8 @@ export default function WeekPage() {
 
       return {
         dayName,
-        label: DAY_LABELS[date.getDay()],
-        date,
+        label: DAY_LABELS[i],
+        dateStr,
         fixedPercent,
         taskPercent,
         statusLabel,
@@ -84,8 +87,7 @@ export default function WeekPage() {
     );
   }
 
-  const today = new Date();
-  const todayStr = today.toDateString();
+  const todayStr = getDateString();
 
   return (
     <div className="pb-20">
@@ -93,7 +95,7 @@ export default function WeekPage() {
 
       <div className="space-y-3">
         {weekData.map((day) => {
-          const isToday = day.date.toDateString() === todayStr;
+          const isToday = day.dateStr === todayStr;
           const labelColor =
             HEAVY_DAYS.includes(day.dayName)
               ? 'text-amber'

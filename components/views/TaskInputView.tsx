@@ -15,6 +15,7 @@ interface TaskInputViewProps {
   onAnalyze: () => void;
   loading: boolean;
   heavyDayContext: string | null;
+  isBeforeWake: boolean;
 }
 
 export default function TaskInputView({
@@ -27,6 +28,7 @@ export default function TaskInputView({
   onAnalyze,
   loading,
   heavyDayContext,
+  isBeforeWake,
 }: TaskInputViewProps) {
   const [now, setNow] = useState(getCurrentTimeStr());
 
@@ -70,7 +72,9 @@ export default function TaskInputView({
       )}
 
       <div className="text-center py-2">
-        <div className="text-xs text-text-muted font-medium tracking-wider">FREE TIME FROM NOW</div>
+        <div className="text-xs text-text-muted font-medium tracking-wider">
+          {isBeforeWake ? 'FREE TIME TODAY' : 'FREE TIME FROM NOW'}
+        </div>
         <div className="font-display text-3xl font-bold text-accent mt-1">
           ~{minutesToHoursDisplay(freeMinutes)}
         </div>

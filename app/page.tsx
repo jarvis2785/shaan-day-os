@@ -18,8 +18,11 @@ import {
   getDateString,
   getTodayBlocks,
   getFreeMinutesFromNow,
+  getTotalFreeMinutes,
   getDayName,
   getHeavyDayContext,
+  isBeforeWakeTime,
+  getISTTomorrow,
 } from '@/lib/schedule';
 import CapacityBar from '@/components/ui/CapacityBar';
 import BottomSheet from '@/components/ui/BottomSheet';
@@ -39,25 +42,48 @@ export default function TodayPage() {
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const reanalysisTimer = useRef<NodeJS.Timeout | null>(null);
+  const currentDateRef = useRef('');
 
-  useEffect(() => {
-    initialize();
-    const today = new Date();
-    const plan = getDayPlan(today);
-    if (plan && plan.date === getDateString(today)) {
+  const loadDayState = useCallback((dateStr: string) => {
+    const plan = getDayPlan();
+    if (plan && plan.date === dateStr) {
       setTasks(plan.tasks);
       setAnalysis(plan.analysis);
       setState(plan.state);
       setCompletedIds(plan.completedTaskIds || []);
     } else {
-      const deferred = getDeferredTasks(today);
+      const deferred = getDeferredTasks();
       if (deferred.length > 0) {
         setTasks(deferred);
-        clearDeferredTasks(today);
+        clearDeferredTasks();
+      } else {
+        setTasks([]);
       }
+      setAnalysis(null);
+      setState('input');
+      setCompletedIds([]);
     }
-    setMounted(true);
+    setError(null);
   }, []);
+
+  useEffect(() => {
+    initialize();
+    const dateStr = getDateString();
+    currentDateRef.current = dateStr;
+    loadDayState(dateStr);
+    setMounted(true);
+  }, [loadDayState]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const nowDate = getDateString();
+      if (nowDate !== currentDateRef.current) {
+        currentDateRef.current = nowDate;
+        loadDayState(nowDate);
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [loadDayState]);
 
   const savePlan = useCallback(
     (overrides?: Partial<DayPlan>) => {
@@ -185,9 +211,7 @@ export default function TodayPage() {
     if (!overflowTask) return;
     const originalTask = tasks.find((t) => t.id === id);
     if (originalTask) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      deferTask(originalTask, tomorrow);
+      deferTask(originalTask, getISTTomorrow());
     }
     const newOverflow = analysis.overflow.filter((t) => t.id !== id);
     setAnalysis({ ...analysis, overflow: newOverflow });
@@ -203,9 +227,10 @@ export default function TodayPage() {
 
   const settings = getSettings();
   const blocks = getTodayBlocks(settings);
-  const freeMinutes = getFreeMinutesFromNow(settings.sleepTime, blocks);
+  const freeMinutes = getFreeMinutesFromNow(settings.wakeTime, settings.sleepTime, blocks);
   const dayName = getDayName();
   const heavyDayContext = getHeavyDayContext(dayName, settings.wakeTime, settings.sleepTime, blocks);
+  const beforeWake = isBeforeWakeTime(settings.wakeTime);
 
   return (
     <div className="pb-20">
@@ -269,6 +294,7 @@ export default function TodayPage() {
           onAnalyze={handleAnalyze}
           loading={loading}
           heavyDayContext={heavyDayContext}
+          isBeforeWake={beforeWake}
         />
       )}
 
