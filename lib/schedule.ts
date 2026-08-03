@@ -1,0 +1,144 @@
+import { FixedBlock, TimeWindow, DayProfile, UserSettings } from './types';
+import { HEAVY_DAYS, LOW_CAP_DAYS, FREE_DAYS, DAY_NAMES } from './constants';
+
+export function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+export function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
+export function formatTimeDisplay(time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
+}
+
+export function getBlockDuration(block: FixedBlock): number {
+  return timeToMinutes(block.end) - timeToMinutes(block.start);
+}
+
+export function getTotalFixedMinutes(blocks: FixedBlock[]): number {
+  return blocks.reduce((sum, b) => sum + getBlockDuration(b), 0);
+}
+
+export function getTotalWakingMinutes(wakeTime: string, sleepTime: string): number {
+  return timeToMinutes(sleepTime) - timeToMinutes(wakeTime);
+}
+
+export function getTransitionBufferMinutes(blocks: FixedBlock[]): number {
+  return blocks.length * 30;
+}
+
+export function getTotalFreeMinutes(
+  wakeTime: string,
+  sleepTime: string,
+  blocks: FixedBlock[]
+): number {
+  const waking = getTotalWakingMinutes(wakeTime, sleepTime);
+  const fixed = getTotalFixedMinutes(blocks);
+  const buffer = getTransitionBufferMinutes(blocks);
+  return Math.max(0, waking - fixed - buffer);
+}
+
+export function getFreeWindows(
+  wakeTime: string,
+  sleepTime: string,
+  blocks: FixedBlock[]
+): TimeWindow[] {
+  const sorted = [...blocks].sort(
+    (a, b) => timeToMinutes(a.start) - timeToMinutes(b.start)
+  );
+
+  const windows: TimeWindow[] = [];
+  const wakeMin = timeToMinutes(wakeTime);
+  const sleepMin = timeToMinutes(sleepTime);
+
+  let cursor = wakeMin;
+
+  for (const block of sorted) {
+    const blockStart = timeToMinutes(block.start);
+    if (cursor < blockStart) {
+      const duration = blockStart - cursor;
+      if (duration >= 30) {
+        windows.push({
+          start: minutesToTime(cursor),
+          end: minutesToTime(blockStart),
+          durationMinutes: duration,
+          quality: getTimeQuality(cursor),
+        });
+      }
+    }
+    const blockEnd = timeToMinutes(block.end) + 30;
+    cursor = Math.max(cursor, blockEnd);
+  }
+
+  if (cursor < sleepMin - 30) {
+    const duration = sleepMin - 30 - cursor;
+    if (duration >= 30) {
+      windows.push({
+        start: minutesToTime(cursor),
+        end: minutesToTime(sleepMin - 30),
+        durationMinutes: duration,
+        quality: getTimeQuality(cursor),
+      });
+    }
+  }
+
+  return windows;
+}
+
+function getTimeQuality(minutesFromMidnight: number): 'prime' | 'good' | 'low' {
+  if (minutesFromMidnight < 12 * 60) return 'prime';
+  if (minutesFromMidnight < 17 * 60) return 'good';
+  return 'low';
+}
+
+export function getDayProfile(dayName: string): DayProfile {
+  const lower = dayName.toLowerCase();
+  if (HEAVY_DAYS.includes(lower)) return 'heavy';
+  if (LOW_CAP_DAYS.includes(lower)) return 'low-capacity';
+  if (FREE_DAYS.includes(lower)) return 'free';
+  return 'moderate';
+}
+
+export function getDayName(date: Date = new Date()): string {
+  return DAY_NAMES[date.getDay()];
+}
+
+export function getTodayBlocks(settings: UserSettings, date: Date = new Date()): FixedBlock[] {
+  const dayName = getDayName(date);
+  return settings.schedule[dayName] || [];
+}
+
+export function formatDate(date: Date = new Date()): string {
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+  });
+}
+
+export function getDateString(date: Date = new Date()): string {
+  return date.toISOString().split('T')[0];
+}
+
+export function getDayLabel(dayName: string): string {
+  const lower = dayName.toLowerCase();
+  if (HEAVY_DAYS.includes(lower)) return 'HEAVY';
+  if (LOW_CAP_DAYS.includes(lower)) return 'LOW CAP';
+  if (FREE_DAYS.includes(lower)) return 'FREE';
+  return '';
+}
+
+export function minutesToHoursDisplay(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (m === 0) return `${h}h`;
+  return `${h}.${Math.round((m / 60) * 10)}h`;
+}
