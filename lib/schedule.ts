@@ -67,7 +67,9 @@ export function getFreeMinutesFromNow(
   const sleepMin = timeToMinutes(sleepTime);
 
   if (nowMin < wakeMin) {
-    return getTotalFreeMinutes(wakeTime, sleepTime, blocks);
+    const waking = sleepMin - wakeMin;
+    const fixed = getTotalFixedMinutes(blocks);
+    return Math.max(0, waking - fixed);
   }
 
   if (nowMin >= sleepMin) return 0;
