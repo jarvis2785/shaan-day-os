@@ -39,7 +39,7 @@ export default function WeekPage() {
     initialize();
     const settings = getSettings();
     const todayDayName = getDayName();
-    const todayDow = DAY_NAMES.indexOf(todayDayName);
+    const todayDow = DAY_NAMES.indexOf(todayDayName as typeof DAY_NAMES[number]);
     const now = Date.now();
 
     const data = Array.from({ length: 7 }).map((_, i) => {

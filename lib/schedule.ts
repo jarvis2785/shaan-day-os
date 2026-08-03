@@ -205,7 +205,7 @@ export function getISTTomorrow(): Date {
 
 export function getISTStartOfWeekString(): string {
   const todayStr = getDateString();
-  const dow = DAY_NAMES.indexOf(getDayName());
+  const dow = DAY_NAMES.indexOf(getDayName() as typeof DAY_NAMES[number]);
   const [y, m, d] = todayStr.split('-').map(Number);
   const sundayDate = new Date(Date.UTC(y, m - 1, d - dow, 12, 0));
   return getDateString(sundayDate);
