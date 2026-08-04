@@ -9,6 +9,8 @@ import {
   getFreeWindows,
   getDateString,
   getCurrentTimeStr,
+  timeToMinutes,
+  minutesToTime,
 } from './schedule';
 import { USER_CONTEXT, DEFAULT_DEAD_ZONES } from './constants';
 
@@ -24,6 +26,10 @@ export function buildAnalysisInput(
   const totalFreeMinutes = getTotalFreeMinutes(settings.wakeTime, settings.sleepTime, blocks);
   const freeWindows = getFreeWindows(settings.wakeTime, settings.sleepTime, blocks);
   const dayProfile = getDayProfile(dayName);
+
+  const deadZones = settings.deadZones ?? DEFAULT_DEAD_ZONES;
+  const morningRoutineEnd = timeToMinutes(settings.wakeTime) + deadZones.morningRoutine;
+  const noTaskBefore = minutesToTime(morningRoutineEnd);
 
   return {
     user: {
@@ -42,8 +48,12 @@ export function buildAnalysisInput(
       freeWindows,
     },
     tasks,
-    deadZoneSettings: settings.deadZones ?? DEFAULT_DEAD_ZONES,
+    deadZoneSettings: deadZones,
     currentTime: getCurrentTimeStr(),
+    constraints: {
+      noTaskBefore,
+      reason: `Morning routine dead zone — first ${deadZones.morningRoutine} minutes after wake are always reserved`,
+    },
   };
 }
 

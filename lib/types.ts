@@ -115,6 +115,10 @@ export interface AnalysisInput {
   tasks: Task[];
   deadZoneSettings: DeadZoneSettings;
   currentTime: string;
+  constraints: {
+    noTaskBefore: string;
+    reason: string;
+  };
 }
 
 export type DayState = 'input' | 'analysis' | 'locked';

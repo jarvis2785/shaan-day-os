@@ -23,7 +23,8 @@ USER: ${JSON.stringify(input.user)}
 TODAY: ${JSON.stringify(input.today)}
 TASKS: ${JSON.stringify(input.tasks)}
 DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
-CURRENT TIME: ${input.currentTime} IST`;
+CURRENT TIME: ${input.currentTime} IST
+CONSTRAINTS: ${JSON.stringify(input.constraints)}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
