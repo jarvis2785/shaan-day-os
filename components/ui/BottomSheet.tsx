@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Task, TaskCategory, TaskDeadline, TaskPriority, CATEGORY_LABELS, DEADLINE_LABELS } from '@/lib/types';
 import { generateId } from '@/lib/storage';
 
@@ -22,6 +22,10 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [estimatedMinutes, setEstimatedMinutes] = useState('');
   const [notes, setNotes] = useState('');
+  const [estimateWarning, setEstimateWarning] = useState<string | null>(null);
+  const [estimateSuggested, setEstimateSuggested] = useState<number | null>(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const estimateAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (editTask) {
@@ -39,7 +43,40 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
       setEstimatedMinutes('');
       setNotes('');
     }
+    setEstimateWarning(null);
+    setEstimateSuggested(null);
   }, [editTask, open]);
+
+  const handleEstimateBlur = async () => {
+    const mins = parseInt(estimatedMinutes);
+    if (!name.trim() || !estimatedMinutes || isNaN(mins) || mins <= 0) return;
+
+    estimateAbortRef.current?.abort();
+    const controller = new AbortController();
+    estimateAbortRef.current = controller;
+
+    setEstimateLoading(true);
+    setEstimateWarning(null);
+    setEstimateSuggested(null);
+
+    try {
+      const res = await fetch('/api/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskName: name.trim(), category, estimatedMinutes: mins }),
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      if (!data.isRealistic) {
+        setEstimateWarning(data.warning);
+        setEstimateSuggested(data.suggestedMinutes);
+      }
+    } catch {
+      // Ignore aborts and network errors
+    } finally {
+      setEstimateLoading(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -154,10 +191,38 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
               <input
                 type="number"
                 value={estimatedMinutes}
-                onChange={(e) => setEstimatedMinutes(e.target.value)}
+                onChange={(e) => {
+                  setEstimatedMinutes(e.target.value);
+                  setEstimateWarning(null);
+                  setEstimateSuggested(null);
+                }}
+                onBlur={handleEstimateBlur}
                 placeholder="minutes"
                 className="w-32 bg-bg border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 font-mono"
               />
+              {estimateLoading && (
+                <p className="text-xs text-text-muted mt-2 animate-pulse">Checking estimate…</p>
+              )}
+              {estimateWarning && !estimateLoading && (
+                <div className="mt-2 flex flex-col gap-2">
+                  <p className="text-xs text-amber leading-relaxed">
+                    ⚠️ {estimateWarning}
+                  </p>
+                  {estimateSuggested && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEstimatedMinutes(String(estimateSuggested));
+                        setEstimateWarning(null);
+                        setEstimateSuggested(null);
+                      }}
+                      className="self-start text-xs font-semibold px-3 py-1.5 rounded-pill bg-amber/10 border border-amber/30 text-amber hover:bg-amber/20 transition-colors"
+                    >
+                      Suggested: {estimateSuggested}min
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>

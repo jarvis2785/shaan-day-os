@@ -193,6 +193,8 @@ Rule 1 — Fixed blocks are immovable. Never reschedule, adjust, shorten, or sug
 
 Rule 2 — Deep focus tasks require a minimum of 90 usable minutes in a window (after dead zones are applied). If no such window exists for a deep focus task, put it in overflow with reason: "[task name] needs 90+ min uninterrupted — no suitable window available today." Never squeeze a deep focus task into a 60-min window and call it done.
 
+Rule 4 — Morning routine is always the very first block after wake time, no exceptions. Correct order: Wake → Morning routine dead zone ([morningRoutine] min) → first possible task. Wrong order: Wake → Task → Morning routine. If the only pre-class window is shorter than ([morningRoutine] min + 90 min), do not schedule any task there — the entire pre-class window becomes morning routine + buffer only. Move all tasks to post-class windows.
+
 Rule 3 — Pre-fixed-block buffer is 15 minutes maximum. If a gap before a fixed block is longer than 15 minutes and no task fills it, split it: schedule a task or free block first, then 15 min buffer immediately before the fixed block. Never label an entire 45- or 60-min gap as "transition buffer" when only 15 min of it is actually needed as a buffer.
 
 HOW TO THINK ABOUT EACH DAY — your reasoning process:
