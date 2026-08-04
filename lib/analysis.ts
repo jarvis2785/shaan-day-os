@@ -10,7 +10,6 @@ import {
   getDateString,
 } from './schedule';
 import { USER_CONTEXT, DEFAULT_DEAD_ZONES } from './constants';
-import { getGymDoneThisWeek } from './storage';
 
 export function buildAnalysisInput(
   settings: UserSettings,
@@ -24,8 +23,6 @@ export function buildAnalysisInput(
   const totalFreeMinutes = getTotalFreeMinutes(settings.wakeTime, settings.sleepTime, blocks);
   const freeWindows = getFreeWindows(settings.wakeTime, settings.sleepTime, blocks);
   const dayProfile = getDayProfile(dayName);
-  const gymDone = getGymDoneThisWeek();
-  const gymRequired = settings.gym.enabled && gymDone < settings.gym.frequency;
 
   return {
     user: {
@@ -44,10 +41,6 @@ export function buildAnalysisInput(
       freeWindows,
     },
     tasks,
-    gymRequired,
-    gymDone,
-    gymPreference: settings.gym.preference,
-    gymDuration: settings.gym.duration,
     deadZoneSettings: settings.deadZones ?? DEFAULT_DEAD_ZONES,
   };
 }

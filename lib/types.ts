@@ -113,10 +113,6 @@ export interface AnalysisInput {
     freeWindows: TimeWindow[];
   };
   tasks: Task[];
-  gymRequired: boolean;
-  gymDone: number;
-  gymPreference: string;
-  gymDuration: number;
   deadZoneSettings: DeadZoneSettings;
 }
 

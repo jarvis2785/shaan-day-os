@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         generateFallbackAnalysis(input),
@@ -17,39 +17,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const userMessage = `
-Here is today's data. Analyze it and return the JSON response.
+    const userMessage = `Here is today's data. Analyze it and return the JSON response.
 
 USER: ${JSON.stringify(input.user)}
 TODAY: ${JSON.stringify(input.today)}
 TASKS: ${JSON.stringify(input.tasks)}
-GYM REQUIRED: ${input.gymRequired}
-GYM DONE THIS WEEK: ${input.gymDone}
-GYM PREFERENCE: ${input.gymPreference}
-GYM DURATION: ${input.gymDuration} minutes
+DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}`;
 
-DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
-`;
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: GROK_SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.3,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        system: GROK_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
       }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('Groq API error:', error);
+      console.error('Claude API error:', error);
       return NextResponse.json(
         generateFallbackAnalysis(input),
         { status: 200 }
@@ -57,7 +49,7 @@ DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.content?.[0]?.text;
 
     if (!content) {
       return NextResponse.json(
@@ -66,7 +58,9 @@ DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
       );
     }
 
-    const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    // Extract JSON block — model may include reasoning text before the JSON
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+    const cleaned = jsonMatch ? jsonMatch[1].trim() : content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const result = JSON.parse(cleaned);
 
     // Enforce label thresholds — don't trust the model's label
@@ -97,7 +91,10 @@ DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
 }
 
 function generateFallbackAnalysis(input: any) {
-  const { today, tasks, user, gymRequired, gymDuration } = input;
+  const { today, tasks, user } = input;
+  const gymBlock = today.fixedBlocks?.find((b: any) => b.type === 'gym');
+  const gymRequired = !!gymBlock;
+  const gymDuration = gymBlock ? (new Date(`1970-01-01T${gymBlock.end}:00`).getTime() - new Date(`1970-01-01T${gymBlock.start}:00`).getTime()) / 60000 : 75;
   const freeMinutes = today.totalFreeMinutes;
   const freeHours = (freeMinutes / 60).toFixed(1);
 
@@ -150,34 +147,6 @@ function generateFallbackAnalysis(input: any) {
   let windowIdx = 0;
   let windowUsed = 0;
   let scheduledCount = 0;
-
-  if (gymRequired && windows.length > 0) {
-    const gymMins = gymDuration || 75;
-    for (let i = 0; i < windows.length; i++) {
-      if (windows[i].durationMinutes >= gymMins + 15) {
-        const start = windows[i].start;
-        const end = minutesToTimeStr(timeToMin(start) + gymMins);
-        schedule.push({
-          id: 'gym',
-          name: 'Gym',
-          start,
-          end,
-          type: 'gym',
-          category: 'health',
-          estimatedMinutes: gymMins,
-          energyType: 'low_energy_ok',
-          notes: null,
-        });
-        totalTaskMinutes += gymMins;
-        windows[i] = {
-          ...windows[i],
-          start: minutesToTimeStr(timeToMin(end) + 15),
-          durationMinutes: windows[i].durationMinutes - gymMins - 15,
-        };
-        break;
-      }
-    }
-  }
 
   for (const task of estimatedTasks) {
     const mins = task.estimatedMinutes;
