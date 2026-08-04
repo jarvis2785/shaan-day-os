@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Task, TaskCategory, TaskDeadline, TaskPriority, CATEGORY_LABELS, DEADLINE_LABELS } from '@/lib/types';
 import { generateId } from '@/lib/storage';
 
@@ -14,6 +15,12 @@ interface BottomSheetProps {
 const categories: TaskCategory[] = ['personal_brand', 'agency_client', 'college', 'health', 'personal'];
 const deadlines: TaskDeadline[] = ['today', 'tomorrow', 'this_week', 'next_week', 'two_plus_weeks', 'none'];
 const priorities: TaskPriority[] = ['high', 'medium', 'low'];
+
+const priorityColors: Record<TaskPriority, string> = {
+  high: '#FF453A',
+  medium: '#FFD60A',
+  low: '#30D158',
+};
 
 export default function BottomSheet({ open, onClose, onSave, editTask }: BottomSheetProps) {
   const [name, setName] = useState('');
@@ -83,8 +90,6 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
     }
   };
 
-  if (!open) return null;
-
   const handleSubmit = () => {
     if (!name.trim()) return;
     const task: Task = {
@@ -101,158 +106,223 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
   };
 
   return (
-    <div className="fixed inset-0 z-[60]">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="absolute bottom-0 left-0 right-0 bg-surface rounded-t-2xl animate-slide-up max-h-[85vh] overflow-y-auto">
-        <div className="max-w-app mx-auto p-5 pb-8">
-          <div className="w-10 h-1 bg-border rounded-full mx-auto mb-5" />
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-[60]">
+          <motion.div
+            className="absolute inset-0"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.div
+            className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto"
+            style={{ backgroundColor: '#1C1C1E', borderRadius: '20px 20px 0 0' }}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            drag="y"
+            dragConstraints={{ top: 0 }}
+            dragElastic={0.2}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 100) onClose();
+            }}
+          >
+            <div className="max-w-app mx-auto p-5 pb-8">
+              <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: '#3A3A3C' }} />
 
-          <h3 className="text-text-primary font-semibold text-base mb-5">
-            {editTask ? 'Edit Task' : 'Add Task'}
-          </h3>
+              <h3 className="text-[15px] font-semibold mb-5" style={{ color: '#FFFFFF' }}>
+                {editTask ? 'Edit Task' : 'Add Task'}
+              </h3>
 
-          <div className="space-y-5">
-            <div>
-              <label className="text-xs text-text-muted font-medium block mb-2">TASK NAME</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="What do you need to do?"
-                className="w-full bg-bg border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50"
-                autoFocus
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-text-muted font-medium block mb-2">CATEGORY</label>
-              <div className="flex flex-wrap gap-2">
-                {categories.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setCategory(c)}
-                    className={`text-xs px-3 py-2 rounded-pill transition-colors ${
-                      category === c
-                        ? 'bg-accent text-bg font-semibold'
-                        : 'bg-bg text-text-body border border-border'
-                    }`}
-                  >
-                    {CATEGORY_LABELS[c]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-text-muted font-medium block mb-2">DEADLINE</label>
-              <div className="flex flex-wrap gap-2">
-                {deadlines.map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDeadline(d)}
-                    className={`text-xs px-3 py-2 rounded-pill transition-colors ${
-                      deadline === d
-                        ? 'bg-accent text-bg font-semibold'
-                        : 'bg-bg text-text-body border border-border'
-                    }`}
-                  >
-                    {DEADLINE_LABELS[d]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-text-muted font-medium block mb-2">PRIORITY</label>
-              <div className="flex gap-2">
-                {priorities.map((p) => {
-                  const color =
-                    p === 'high' ? 'border-danger text-danger' :
-                    p === 'medium' ? 'border-amber text-amber' :
-                    'border-text-muted text-text-muted';
-                  const activeColor =
-                    p === 'high' ? 'bg-danger text-bg' :
-                    p === 'medium' ? 'bg-amber text-bg' :
-                    'bg-text-muted text-bg';
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => setPriority(p)}
-                      className={`text-xs px-4 py-2 rounded-pill font-semibold transition-colors border ${
-                        priority === p ? activeColor : color
-                      }`}
-                    >
-                      {p.toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-text-muted font-medium block mb-2">
-                ESTIMATED TIME <span className="text-text-muted/60">(optional)</span>
-              </label>
-              <input
-                type="number"
-                value={estimatedMinutes}
-                onChange={(e) => {
-                  setEstimatedMinutes(e.target.value);
-                  setEstimateWarning(null);
-                  setEstimateSuggested(null);
-                }}
-                onBlur={handleEstimateBlur}
-                placeholder="minutes"
-                className="w-32 bg-bg border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 font-mono"
-              />
-              {estimateLoading && (
-                <p className="text-xs text-text-muted mt-2 animate-pulse">Checking estimate…</p>
-              )}
-              {estimateWarning && !estimateLoading && (
-                <div className="mt-2 flex flex-col gap-2">
-                  <p className="text-xs text-amber leading-relaxed">
-                    ⚠️ {estimateWarning}
-                  </p>
-                  {estimateSuggested && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEstimatedMinutes(String(estimateSuggested));
-                        setEstimateWarning(null);
-                        setEstimateSuggested(null);
-                      }}
-                      className="self-start text-xs font-semibold px-3 py-1.5 rounded-pill bg-amber/10 border border-amber/30 text-amber hover:bg-amber/20 transition-colors"
-                    >
-                      Suggested: {estimateSuggested}min
-                    </button>
-                  )}
+              <div className="space-y-5">
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.15em] uppercase block mb-2" style={{ color: '#48484A' }}>
+                    TASK NAME
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="What do you need to do?"
+                    className="w-full rounded-btn px-4 py-3 text-[15px] focus:outline-none"
+                    style={{
+                      backgroundColor: '#111111',
+                      color: '#FFFFFF',
+                      border: '1px solid #2C2C2E',
+                    }}
+                    autoFocus
+                  />
                 </div>
-              )}
-            </div>
 
-            <div>
-              <label className="text-xs text-text-muted font-medium block mb-2">
-                NOTES <span className="text-text-muted/60">(optional)</span>
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any context the AI should know..."
-                rows={2}
-                className="w-full bg-bg border border-border rounded-btn px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 resize-none"
-              />
-            </div>
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.15em] uppercase block mb-2" style={{ color: '#48484A' }}>
+                    CATEGORY
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map((c) => (
+                      <motion.button
+                        key={c}
+                        onClick={() => setCategory(c)}
+                        className="text-[13px] px-3.5 py-2 rounded-pill font-medium"
+                        style={{
+                          backgroundColor: category === c ? '#30D158' : '#111111',
+                          color: category === c ? '#000000' : '#8E8E93',
+                          border: category === c ? 'none' : '1px solid #2C2C2E',
+                        }}
+                        whileTap={{ scale: 0.96 }}
+                      >
+                        {CATEGORY_LABELS[c]}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
 
-            <button
-              onClick={handleSubmit}
-              disabled={!name.trim()}
-              className="w-full py-3.5 rounded-btn font-semibold text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-accent text-bg active:scale-[0.98]"
-            >
-              {editTask ? 'Save Changes' : 'Add Task'}
-            </button>
-          </div>
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.15em] uppercase block mb-2" style={{ color: '#48484A' }}>
+                    DEADLINE
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {deadlines.map((d) => (
+                      <motion.button
+                        key={d}
+                        onClick={() => setDeadline(d)}
+                        className="text-[13px] px-3.5 py-2 rounded-pill font-medium"
+                        style={{
+                          backgroundColor: deadline === d ? '#30D158' : '#111111',
+                          color: deadline === d ? '#000000' : '#8E8E93',
+                          border: deadline === d ? 'none' : '1px solid #2C2C2E',
+                        }}
+                        whileTap={{ scale: 0.96 }}
+                      >
+                        {DEADLINE_LABELS[d]}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.15em] uppercase block mb-2" style={{ color: '#48484A' }}>
+                    PRIORITY
+                  </label>
+                  <div className="flex gap-2">
+                    {priorities.map((p) => (
+                      <motion.button
+                        key={p}
+                        onClick={() => setPriority(p)}
+                        className="text-[13px] px-4 py-2 rounded-pill font-semibold"
+                        style={{
+                          backgroundColor: priority === p ? priorityColors[p] : 'transparent',
+                          color: priority === p ? '#000000' : priorityColors[p],
+                          border: `1px solid ${priority === p ? priorityColors[p] : priorityColors[p] + '55'}`,
+                        }}
+                        whileTap={{ scale: 0.96 }}
+                      >
+                        {p.toUpperCase()}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.15em] uppercase block mb-2" style={{ color: '#48484A' }}>
+                    ESTIMATED TIME <span style={{ opacity: 0.5 }}>(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={estimatedMinutes}
+                    onChange={(e) => {
+                      setEstimatedMinutes(e.target.value);
+                      setEstimateWarning(null);
+                      setEstimateSuggested(null);
+                    }}
+                    onBlur={handleEstimateBlur}
+                    placeholder="minutes"
+                    className="w-32 rounded-btn px-4 py-3 text-[15px] font-mono focus:outline-none"
+                    style={{
+                      backgroundColor: '#111111',
+                      color: '#FFFFFF',
+                      border: '1px solid #2C2C2E',
+                    }}
+                  />
+                  {estimateLoading && (
+                    <p className="text-[13px] mt-2 animate-pulse" style={{ color: '#48484A' }}>
+                      Checking estimate...
+                    </p>
+                  )}
+                  <AnimatePresence>
+                    {estimateWarning && !estimateLoading && (
+                      <motion.div
+                        className="mt-2 flex flex-col gap-2"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                      >
+                        <p className="text-[13px] leading-relaxed" style={{ color: '#FFD60A' }}>
+                          {estimateWarning}
+                        </p>
+                        {estimateSuggested && (
+                          <motion.button
+                            type="button"
+                            onClick={() => {
+                              setEstimatedMinutes(String(estimateSuggested));
+                              setEstimateWarning(null);
+                              setEstimateSuggested(null);
+                            }}
+                            className="self-start text-[13px] font-semibold px-3 py-1.5 rounded-pill"
+                            style={{
+                              backgroundColor: 'rgba(255, 214, 10, 0.1)',
+                              border: '1px solid rgba(255, 214, 10, 0.3)',
+                              color: '#FFD60A',
+                            }}
+                            whileTap={{ scale: 0.96 }}
+                          >
+                            Suggested: {estimateSuggested}min
+                          </motion.button>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.15em] uppercase block mb-2" style={{ color: '#48484A' }}>
+                    NOTES <span style={{ opacity: 0.5 }}>(optional)</span>
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Any context the AI should know..."
+                    rows={2}
+                    className="w-full rounded-btn px-4 py-3 text-[15px] focus:outline-none resize-none"
+                    style={{
+                      backgroundColor: '#111111',
+                      color: '#FFFFFF',
+                      border: '1px solid #2C2C2E',
+                    }}
+                  />
+                </div>
+
+                <motion.button
+                  onClick={handleSubmit}
+                  disabled={!name.trim()}
+                  className="w-full py-3.5 rounded-btn font-bold text-[15px] uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: '#30D158',
+                    color: '#000000',
+                  }}
+                  whileTap={{ scale: 0.96 }}
+                >
+                  {editTask ? 'Save Changes' : 'Add Task'}
+                </motion.button>
+              </div>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 }

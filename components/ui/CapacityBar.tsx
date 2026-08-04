@@ -1,6 +1,7 @@
 'use client';
 
-import { ScheduleBlock } from '@/lib/types';
+import { motion } from 'framer-motion';
+import { ScheduleBlock, DayLoadLabel } from '@/lib/types';
 import { timeToMinutes } from '@/lib/schedule';
 
 interface CapacityBarProps {
@@ -8,17 +9,26 @@ interface CapacityBarProps {
   sleepTime: string;
   schedule?: ScheduleBlock[];
   loading?: boolean;
+  loadLabel?: DayLoadLabel;
 }
 
-export default function CapacityBar({ wakeTime, sleepTime, schedule, loading }: CapacityBarProps) {
+function getLoadColor(label?: DayLoadLabel): string {
+  if (label === 'CLEAR') return '#30D158';
+  if (label === 'TIGHT') return '#FFD60A';
+  if (label === 'LOADED' || label === 'OVERLOADED') return '#FF453A';
+  return '#30D158';
+}
+
+export default function CapacityBar({ wakeTime, sleepTime, schedule, loading, loadLabel }: CapacityBarProps) {
   const wakeMin = timeToMinutes(wakeTime);
   const sleepMin = timeToMinutes(sleepTime);
   const totalMinutes = sleepMin - wakeMin;
   const segmentCount = Math.floor(totalMinutes / 30);
+  const taskColor = getLoadColor(loadLabel);
 
   function getSegmentColor(index: number): string {
-    if (loading) return '#1E1E1E';
-    if (!schedule || schedule.length === 0) return '#111111';
+    if (loading) return '#1C1C1E';
+    if (!schedule || schedule.length === 0) return '#1C1C1E';
 
     const segStart = wakeMin + index * 30;
     const segEnd = segStart + 30;
@@ -28,27 +38,26 @@ export default function CapacityBar({ wakeTime, sleepTime, schedule, loading }: 
       const blockEnd = timeToMinutes(block.end);
 
       if (segStart < blockEnd && segEnd > blockStart) {
-        if (block.type === 'fixed') return '#2A2A2A';
-        if (block.type === 'task') return '#E8FF47';
-        if (block.type === 'gym') return '#E8FF47';
-        if (block.type === 'buffer') return '#1E1E1E';
+        if (block.type === 'fixed') return '#3A3A3C';
+        if (block.type === 'task' || block.type === 'gym') return taskColor;
+        if (block.type === 'buffer' || block.type === 'dead_zone' || block.type === 'meal') return '#242424';
       }
     }
 
-    return '#111111';
+    return '#1C1C1E';
   }
 
   return (
     <div className="w-full">
-      <div className="flex gap-[2px]">
+      <div className="flex gap-[3px]">
         {Array.from({ length: segmentCount }).map((_, i) => (
-          <div
+          <motion.div
             key={i}
-            className={`h-3 flex-1 rounded-sm transition-all ${loading ? 'animate-pulse-segment' : ''}`}
-            style={{
-              backgroundColor: getSegmentColor(i),
-              animationDelay: loading ? `${i * 50}ms` : undefined,
-            }}
+            className="h-[6px] flex-1 rounded-sm"
+            style={{ backgroundColor: getSegmentColor(i) }}
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ duration: 0.4, delay: i * 0.025, ease: [0.16, 1, 0.3, 1] }}
           />
         ))}
       </div>

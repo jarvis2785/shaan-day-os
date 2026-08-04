@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#080808',
+  themeColor: '#111111',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -36,7 +36,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-apple-touch.png" />
       </head>
       <body className="bg-bg text-text-primary">
-        <main className="max-w-app mx-auto px-4 pt-12 pb-4 min-h-screen">
+        <main className="max-w-app mx-auto px-5 pt-14 pb-4 min-h-screen">
           {children}
         </main>
         <BottomNav />

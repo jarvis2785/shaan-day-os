@@ -1,6 +1,7 @@
 'use client';
 
-import { AnalysisResult, Task } from '@/lib/types';
+import { motion } from 'framer-motion';
+import { AnalysisResult } from '@/lib/types';
 import { getISTMinutes } from '@/lib/schedule';
 import CapacityBar from '@/components/ui/CapacityBar';
 import DayLoadScore from '@/components/ui/DayLoadScore';
@@ -39,32 +40,56 @@ export default function AnalysisView({
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-8">
+      <DayLoadScore
+        percent={analysis.dayLoadPercent}
+        label={analysis.dayLoadLabel}
+        loading={reanalyzing}
+      />
+
+      <motion.div
+        className="flex justify-center gap-3"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.2 }}
+      >
+        {[
+          { label: 'Free', value: analysis.stats.freeTimeAvailable },
+          { label: 'Tasks', value: analysis.stats.estimatedTaskTime },
+          ...(analysis.stats.usableTimeAfterDeadZones
+            ? [{ label: 'Usable', value: analysis.stats.usableTimeAfterDeadZones }]
+            : []),
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="px-4 py-2 rounded-btn text-center"
+            style={{ backgroundColor: '#242424' }}
+          >
+            <div className="text-[11px] font-semibold tracking-[0.15em] uppercase" style={{ color: '#48484A' }}>
+              {stat.label}
+            </div>
+            <div className="text-[15px] font-semibold mt-0.5" style={{ color: '#FFFFFF' }}>
+              {stat.value}
+            </div>
+          </div>
+        ))}
+      </motion.div>
+
+      <CapacityBar
+        wakeTime={wakeTime}
+        sleepTime={sleepTime}
+        schedule={analysis.schedule}
+        loading={reanalyzing}
+        loadLabel={analysis.dayLoadLabel}
+      />
+
+      <MentorCard assessment={analysis.mentorAssessment} loadLabel={analysis.dayLoadLabel} />
+
       <div>
-        <div className="text-xs text-text-muted font-semibold tracking-wider mb-3">DAY CAPACITY</div>
-        <CapacityBar
-          wakeTime={wakeTime}
-          sleepTime={sleepTime}
-          schedule={analysis.schedule}
-          loading={reanalyzing}
-        />
-      </div>
-
-      <DayLoadScore percent={analysis.dayLoadPercent} label={analysis.dayLoadLabel} />
-
-      <div className="flex items-center justify-center gap-6 text-xs text-text-muted">
-        <span>Free: {analysis.stats.freeTimeAvailable}</span>
-        <span className="text-border">|</span>
-        <span>Tasks: {analysis.stats.estimatedTaskTime} est</span>
-      </div>
-
-      <MentorCard assessment={analysis.mentorAssessment} />
-
-      <div>
-        <h2 className="text-xs text-text-muted font-semibold tracking-wider mb-3">
+        <div className="text-[11px] font-semibold tracking-[0.15em] uppercase mb-3" style={{ color: '#48484A' }}>
           TODAY&apos;S SCHEDULE
-        </h2>
-        <div className="space-y-1">
+        </div>
+        <div className="space-y-0.5">
           {analysis.schedule.map((block, idx) => {
             const isPast =
               block.type !== 'wake' &&
@@ -74,12 +99,24 @@ export default function AnalysisView({
             return (
               <div key={block.id}>
                 {isStartHere && (
-                  <div className="flex items-center gap-2 pl-[76px] mb-1 mt-2">
-                    <span className="text-[10px] font-semibold text-accent tracking-widest">▶ NOW</span>
-                    <div className="flex-1 h-px bg-accent/25" />
-                  </div>
+                  <motion.div
+                    className="flex items-center gap-2 pl-[76px] mb-1 mt-3"
+                    initial={{ opacity: 0, scaleX: 0 }}
+                    animate={{ opacity: 1, scaleX: 1 }}
+                    transition={{ duration: 0.4, delay: idx * 0.05 }}
+                  >
+                    <span className="text-[11px] font-semibold tracking-[0.2em] shrink-0" style={{ color: '#30D158' }}>
+                      NOW
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: 'rgba(48, 209, 88, 0.25)' }} />
+                  </motion.div>
                 )}
-                <TimelineBlock block={block} isPast={isPast} />
+                <TimelineBlock
+                  block={block}
+                  index={idx}
+                  isPast={isPast}
+                  loadLabel={analysis.dayLoadLabel}
+                />
               </div>
             );
           })}
@@ -88,12 +125,12 @@ export default function AnalysisView({
 
       {analysis.overflow.length > 0 && (
         <div>
-          <h2 className="text-xs text-danger font-semibold tracking-wider mb-3">
+          <div className="text-[11px] font-semibold tracking-[0.15em] uppercase mb-3" style={{ color: '#FF453A' }}>
             DIDN&apos;T MAKE THE CUT
-          </h2>
+          </div>
           <div className="space-y-2">
-            {analysis.overflow.map((task) => (
-              <OverflowCard key={task.id} task={task} onDefer={onDefer} />
+            {analysis.overflow.map((task, i) => (
+              <OverflowCard key={task.id} task={task} index={i} onDefer={onDefer} />
             ))}
           </div>
         </div>
@@ -102,27 +139,53 @@ export default function AnalysisView({
       {analysis.warnings.length > 0 && (
         <div className="space-y-2">
           {analysis.warnings.map((w, i) => (
-            <div key={i} className="text-xs text-amber bg-amber/5 rounded-btn px-3 py-2 border border-amber/10">
+            <div
+              key={i}
+              className="text-[13px] rounded-btn px-3.5 py-2.5"
+              style={{
+                backgroundColor: 'rgba(255, 214, 10, 0.06)',
+                border: '1px solid rgba(255, 214, 10, 0.15)',
+                color: '#FFD60A',
+              }}
+            >
               {w}
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex gap-3 pt-2">
-        <button
+      <motion.div
+        className="flex gap-3 pt-2"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.8 }}
+      >
+        <motion.button
           onClick={onRethink}
-          className="flex-1 py-3.5 rounded-btn border border-border text-text-body text-sm font-medium hover:border-text-muted transition-colors"
+          className="flex-1 py-3.5 rounded-btn text-[15px] font-medium"
+          style={{
+            backgroundColor: '#242424',
+            color: '#8E8E93',
+            border: '1px solid #3A3A3C',
+          }}
+          whileTap={{ scale: 0.96 }}
         >
           Rethink
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           onClick={onLock}
-          className="flex-1 py-3.5 rounded-btn bg-accent text-bg text-sm font-semibold active:scale-[0.98] transition-transform"
+          className="flex-1 py-3.5 rounded-btn text-[15px] font-bold"
+          style={{
+            backgroundColor: analysis.dayLoadLabel === 'CLEAR' ? '#30D158'
+              : analysis.dayLoadLabel === 'TIGHT' ? '#FFD60A'
+              : '#FF453A',
+            color: '#000000',
+          }}
+          whileTap={{ scale: 0.96 }}
         >
           Lock Day
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
     </div>
   );
 }

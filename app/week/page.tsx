@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { DayPlan } from '@/lib/types';
 import { getSettings, getDayPlan, initialize } from '@/lib/storage';
 import {
@@ -12,13 +13,30 @@ import {
   FREE_DAYS,
 } from '@/lib/constants';
 import {
-  getTotalFreeMinutes,
   getTotalFixedMinutes,
   getTotalWakingMinutes,
   getDayLabel,
   getDateString,
   getDayName,
 } from '@/lib/schedule';
+
+function getStatusColor(label: string, dayName: string, plan: DayPlan | null): string {
+  if (plan?.state === 'locked') return '#30D158';
+  if (plan?.state === 'analysis') return '#FFD60A';
+  if (HEAVY_DAYS.includes(dayName)) return '#FFD60A';
+  if (LOW_CAP_DAYS.includes(dayName)) return '#FF453A';
+  return '#48484A';
+}
+
+function getMiniRingPercent(fixedPercent: number, taskPercent: number): number {
+  return Math.min(fixedPercent + taskPercent, 100);
+}
+
+function getMiniRingColor(percent: number): string {
+  if (percent <= 60) return '#30D158';
+  if (percent <= 85) return '#FFD60A';
+  return '#FF453A';
+}
 
 export default function WeekPage() {
   const [mounted, setMounted] = useState(false);
@@ -64,15 +82,7 @@ export default function WeekPage() {
       if (plan?.state === 'locked') statusLabel = 'Locked';
       else if (plan?.state === 'analysis') statusLabel = 'Planned';
 
-      return {
-        dayName,
-        label: DAY_LABELS[i],
-        dateStr,
-        fixedPercent,
-        taskPercent,
-        statusLabel,
-        plan,
-      };
+      return { dayName, label: DAY_LABELS[i], dateStr, fixedPercent, taskPercent, statusLabel, plan };
     });
 
     setWeekData(data);
@@ -81,8 +91,8 @@ export default function WeekPage() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center">
-        <div className="text-text-muted text-sm">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#111111' }}>
+        <div className="text-[15px]" style={{ color: '#48484A' }}>Loading...</div>
       </div>
     );
   }
@@ -90,66 +100,69 @@ export default function WeekPage() {
   const todayStr = getDateString();
 
   return (
-    <div className="pb-20">
-      <h1 className="font-display text-xl font-bold text-text-primary mb-6">This Week</h1>
+    <div className="pb-24">
+      <div className="text-[11px] font-semibold tracking-[0.15em] uppercase mb-5" style={{ color: '#48484A' }}>
+        THIS WEEK
+      </div>
 
-      <div className="space-y-3">
-        {weekData.map((day) => {
+      <div className="space-y-2">
+        {weekData.map((day, i) => {
           const isToday = day.dateStr === todayStr;
-          const labelColor =
-            HEAVY_DAYS.includes(day.dayName)
-              ? 'text-amber'
-              : LOW_CAP_DAYS.includes(day.dayName)
-                ? 'text-danger/70'
-                : day.plan?.state === 'locked'
-                  ? 'text-accent'
-                  : FREE_DAYS.includes(day.dayName)
-                    ? 'text-text-muted'
-                    : 'text-text-muted';
+          const ringPercent = getMiniRingPercent(day.fixedPercent, day.taskPercent);
+          const ringColor = getMiniRingColor(ringPercent);
+          const statusColor = getStatusColor(day.statusLabel, day.dayName, day.plan);
+
+          const size = 32;
+          const sw = 3;
+          const r = (size - sw) / 2;
+          const circ = 2 * Math.PI * r;
+          const filled = circ * (ringPercent / 100);
 
           return (
-            <button
+            <motion.button
               key={day.dayName}
-              onClick={() => {
-                if (isToday) router.push('/');
+              onClick={() => { if (isToday) router.push('/'); }}
+              className="w-full flex items-center gap-4 rounded-card p-4"
+              style={{
+                backgroundColor: '#1C1C1E',
+                ...(isToday ? { boxShadow: `inset 0 0 0 1px rgba(48, 209, 88, 0.15)` } : {}),
               }}
-              className={`w-full flex items-center gap-4 bg-surface rounded-card p-4 border transition-colors ${
-                isToday ? 'border-accent/20' : 'border-border'
-              } ${isToday ? 'cursor-pointer' : 'cursor-default'}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: i * 0.05 }}
+              whileTap={isToday ? { scale: 0.98 } : {}}
             >
-              <span className={`text-sm font-semibold w-10 ${isToday ? 'text-accent' : 'text-text-body'}`}>
+              <span
+                className="text-[15px] font-semibold w-10"
+                style={{ color: isToday ? '#30D158' : '#8E8E93' }}
+              >
                 {day.label}
               </span>
 
-              <div className="flex-1">
-                <div className="flex gap-[1px] h-2.5 rounded-sm overflow-hidden bg-bg">
-                  {day.fixedPercent > 0 && (
-                    <div
-                      className="bg-[#2A2A2A] h-full"
-                      style={{ width: `${day.fixedPercent}%` }}
-                    />
-                  )}
-                  {day.taskPercent > 0 && (
-                    <div
-                      className="bg-accent h-full"
-                      style={{ width: `${day.taskPercent}%` }}
-                    />
-                  )}
-                </div>
-              </div>
+              <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+                <circle
+                  cx={size / 2} cy={size / 2} r={r}
+                  fill="none" stroke="#2C2C2E" strokeWidth={sw}
+                />
+                <circle
+                  cx={size / 2} cy={size / 2} r={r}
+                  fill="none" stroke={ringColor} strokeWidth={sw}
+                  strokeDasharray={`${filled} ${circ - filled}`}
+                  strokeLinecap="round"
+                  transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                />
+              </svg>
 
-              <span className={`text-xs font-medium w-20 text-right ${labelColor}`}>
+              <span className="flex-1" />
+
+              <span className="text-[13px] font-medium" style={{ color: statusColor }}>
                 {day.statusLabel || '—'}
               </span>
 
-              {isToday ? (
-                <span className="text-text-muted text-xs">→</span>
-              ) : !day.plan ? (
-                <span className="text-text-muted text-xs opacity-0">→</span>
-              ) : (
-                <span className="text-accent text-xs">&#10003;</span>
+              {isToday && (
+                <span style={{ color: '#48484A' }} className="text-[13px]">→</span>
               )}
-            </button>
+            </motion.button>
           );
         })}
       </div>
