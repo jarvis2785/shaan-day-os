@@ -112,3 +112,23 @@ export function clearDeferredTasks(date: Date = new Date()): void {
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
+
+const PLANNED_TASKS_PREFIX = 'dayos_planned_';
+
+export function getPlannedTasks(date: Date): Task[] {
+  if (typeof window === 'undefined') return [];
+  const key = PLANNED_TASKS_PREFIX + getDateString(date);
+  const raw = localStorage.getItem(key);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+export function savePlannedTasks(tasks: Task[], date: Date): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(PLANNED_TASKS_PREFIX + getDateString(date), JSON.stringify(tasks));
+}
+
+export function clearPlannedTasks(date: Date): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(PLANNED_TASKS_PREFIX + getDateString(date));
+}

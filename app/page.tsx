@@ -12,6 +12,8 @@ import {
   clearDeferredTasks,
   deferTask,
   initialize,
+  getPlannedTasks,
+  clearPlannedTasks,
 } from '@/lib/storage';
 import {
   formatDate,
@@ -21,12 +23,14 @@ import {
   isBeforeWakeTime,
   getISTTomorrow,
 } from '@/lib/schedule';
+import { useRouter } from 'next/navigation';
 import BottomSheet from '@/components/ui/BottomSheet';
 import TaskInputView from '@/components/views/TaskInputView';
 import AnalysisView from '@/components/views/AnalysisView';
 import ExecutionView from '@/components/views/ExecutionView';
 
 export default function TodayPage() {
+  const router = useRouter();
   const [state, setState] = useState<DayState>('input');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -37,6 +41,7 @@ export default function TodayPage() {
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [plannerBanner, setPlannerBanner] = useState(false);
   const [, setMinuteTick] = useState(0);
   const reanalysisTimer = useRef<NodeJS.Timeout | null>(null);
   const currentDateRef = useRef('');
@@ -49,8 +54,15 @@ export default function TodayPage() {
       setState(plan.state);
       setCompletedIds(plan.completedTaskIds || []);
     } else {
+      const today = new Date();
+      const planned = getPlannedTasks(today);
       const deferred = getDeferredTasks();
-      if (deferred.length > 0) {
+
+      if (planned.length > 0) {
+        setTasks(planned);
+        clearPlannedTasks(today);
+        setPlannerBanner(true);
+      } else if (deferred.length > 0) {
         setTasks(deferred);
         clearDeferredTasks();
       } else {
@@ -271,6 +283,33 @@ export default function TodayPage() {
         </motion.div>
       )}
 
+      {/* Planner banner — shown when tasks were auto-loaded from yesterday's plan */}
+      <AnimatePresence>
+        {plannerBanner && (
+          <motion.div
+            className="flex items-center justify-between rounded-btn px-4 py-3 mb-6"
+            style={{
+              backgroundColor: 'rgba(48, 209, 88, 0.06)',
+              border: '1px solid rgba(48, 209, 88, 0.15)',
+            }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <span className="text-[13px]" style={{ color: '#30D158' }}>
+              📋 Loaded from yesterday&apos;s plan
+            </span>
+            <button
+              onClick={() => setPlannerBanner(false)}
+              className="text-[18px] leading-none ml-3"
+              style={{ color: '#48484A' }}
+            >
+              ×
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence mode="wait">
         {state === 'input' && (
           <motion.div
@@ -331,6 +370,22 @@ export default function TodayPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Plan Tomorrow — always visible regardless of day state */}
+      <motion.button
+        onClick={() => router.push('/plan-tomorrow')}
+        className="w-full mt-6 py-3.5 rounded-card text-[15px] font-medium"
+        style={{
+          color: '#48484A',
+          border: '1px solid #2C2C2E',
+        }}
+        whileTap={{ scale: 0.98 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3, delay: 0.2 }}
+      >
+        Plan Tomorrow →
+      </motion.button>
 
       <BottomSheet
         open={sheetOpen}
