@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
 USER: ${JSON.stringify(input.user)}
 TODAY: ${JSON.stringify(input.today)}
 TASKS: ${JSON.stringify(input.tasks)}
-DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}`;
+DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
+CURRENT TIME: ${input.currentTime} IST`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

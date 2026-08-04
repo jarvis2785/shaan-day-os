@@ -49,7 +49,11 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
 
   const handleEstimateBlur = async () => {
     const mins = parseInt(estimatedMinutes);
-    if (!name.trim() || !estimatedMinutes || isNaN(mins) || mins <= 0) return;
+    console.log('[Estimate] blur fired', { name: name.trim(), category, estimatedMinutes, mins });
+    if (!name.trim() || !estimatedMinutes || isNaN(mins) || mins <= 0) {
+      console.log('[Estimate] skipped — guard failed', { hasName: !!name.trim(), estimatedMinutes, mins });
+      return;
+    }
 
     estimateAbortRef.current?.abort();
     const controller = new AbortController();
@@ -67,12 +71,13 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
         signal: controller.signal,
       });
       const data = await res.json();
+      console.log('[Estimate] response', data);
       if (!data.isRealistic) {
         setEstimateWarning(data.warning);
         setEstimateSuggested(data.suggestedMinutes);
       }
-    } catch {
-      // Ignore aborts and network errors
+    } catch (err) {
+      console.log('[Estimate] error', err);
     } finally {
       setEstimateLoading(false);
     }

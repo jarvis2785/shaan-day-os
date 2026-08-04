@@ -7,10 +7,11 @@ interface TimelineBlockProps {
   block: ScheduleBlock;
   isNow?: boolean;
   isCompleted?: boolean;
+  isPast?: boolean;
   onMarkDone?: (id: string) => void;
 }
 
-export default function TimelineBlock({ block, isNow, isCompleted, onMarkDone }: TimelineBlockProps) {
+export default function TimelineBlock({ block, isNow, isCompleted, isPast, onMarkDone }: TimelineBlockProps) {
   if (block.type === 'wake' || block.type === 'sleep') {
     return (
       <div className="flex items-center gap-3 py-2 opacity-50">
@@ -26,7 +27,7 @@ export default function TimelineBlock({ block, isNow, isCompleted, onMarkDone }:
     const isDead = block.type === 'dead_zone';
     const isMeal = block.type === 'meal';
     return (
-      <div className="flex items-center gap-3 py-1">
+      <div className={`flex items-center gap-3 py-1 ${isPast ? 'opacity-30' : ''}`}>
         <span className="font-mono text-xs text-text-muted w-16 shrink-0">
           {formatTimeDisplay(block.start)}
         </span>
@@ -51,7 +52,7 @@ export default function TimelineBlock({ block, isNow, isCompleted, onMarkDone }:
 
   return (
     <div
-      className={`flex items-start gap-3 py-1 ${isNow ? 'animate-subtle-pulse' : ''} ${isCompleted ? 'opacity-40' : ''}`}
+      className={`flex items-start gap-3 py-1 ${isNow ? 'animate-subtle-pulse' : ''} ${isCompleted ? 'opacity-40' : ''} ${isPast ? 'opacity-30' : ''}`}
     >
       <span className="font-mono text-xs text-text-muted w-16 shrink-0 pt-2.5">
         {formatTimeDisplay(block.start)}
@@ -65,8 +66,15 @@ export default function TimelineBlock({ block, isNow, isCompleted, onMarkDone }:
       >
         <div className="flex items-center justify-between">
           <div>
-            <div className={`text-sm font-medium ${isFixed ? 'text-text-body' : 'text-text-primary'}`}>
-              {block.name}
+            <div className="flex items-center gap-2">
+              <div className={`text-sm font-medium ${isFixed ? 'text-text-body' : 'text-text-primary'}`}>
+                {block.name}
+              </div>
+              {isPast && (
+                <span className="text-[10px] font-mono font-semibold text-text-muted/60 bg-border/50 rounded px-1.5 py-0.5 tracking-wider">
+                  PASSED
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 mt-1">
               <span className="font-mono text-xs text-text-muted">

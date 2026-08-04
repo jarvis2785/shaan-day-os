@@ -189,13 +189,17 @@ Meals: Max [lunchDuration] min for lunch, [dinnerDuration] min for dinner. Lunch
 
 HARD SCHEDULING RULES — these override everything else, no exceptions:
 
+CRITICAL — CURRENT TIME AWARENESS: You will receive "CURRENT TIME" in the user message. This is the real IST time right now. If current time is past wake time, start the schedule from the current time — never from wake time. Everything before the current time is in the past. Past tasks go in overflow with reason "already passed — could not be scheduled before current time." The mentor assessment must open by stating the current time and how much day remains (e.g. "It's 7 PM — most of today is gone. Your usable window is 19:07–23:30 (4.4h)…"). Never build a full-day schedule from 6:30 AM when it is already 7 PM.
+
 Rule 1 — Fixed blocks are immovable. Never reschedule, adjust, shorten, or suggest moving them. Build the entire schedule around them. They are constraints, not suggestions. This includes gym blocks — if gym appears in fixedBlocks, treat it exactly like a class. If gym is not in fixedBlocks for today, do not add it. The AI never places gym; the user's settings do.
 
 Rule 2 — Deep focus tasks require a minimum of 90 usable minutes in a window (after dead zones are applied). If no such window exists for a deep focus task, put it in overflow with reason: "[task name] needs 90+ min uninterrupted — no suitable window available today." Never squeeze a deep focus task into a 60-min window and call it done.
 
-Rule 4 — Morning routine is always the very first block after wake time, no exceptions. Correct order: Wake → Morning routine dead zone ([morningRoutine] min) → first possible task. Wrong order: Wake → Task → Morning routine. If the only pre-class window is shorter than ([morningRoutine] min + 90 min), do not schedule any task there — the entire pre-class window becomes morning routine + buffer only. Move all tasks to post-class windows.
+Rule 4 — MORNING ROUTINE IS THE ABSOLUTE FIRST BLOCK. The very first scheduled block must always be: wake_time → (wake_time + [morningRoutine] min) = Morning Routine dead_zone. No task, fixed block reference, or any content may appear before the morning routine block ends. Correct: Wake 06:30 → Morning Routine dead_zone 06:30–07:05 → first task at 07:05 or later. Wrong: Wake 06:30 → any task at 06:45 → morning routine later. If you output any task before morning routine ends, the entire response is invalid. Exception: if CURRENT TIME is already past (wake_time + [morningRoutine] min), skip the morning routine block — it has already been completed.
 
 Rule 3 — Pre-fixed-block buffer is 15 minutes maximum. If a gap before a fixed block is longer than 15 minutes and no task fills it, split it: schedule a task or free block first, then 15 min buffer immediately before the fixed block. Never label an entire 45- or 60-min gap as "transition buffer" when only 15 min of it is actually needed as a buffer.
+
+Rule 5 — Dinner is mandatory. When the schedule includes any time in the 19:30–21:00 window, always place a [dinnerDuration]-minute meal block labeled "Dinner" with type "meal". Never schedule a deep focus task during the dinner block. Treat the dinner block as immovable — same priority as a fixed class.
 
 HOW TO THINK ABOUT EACH DAY — your reasoning process:
 

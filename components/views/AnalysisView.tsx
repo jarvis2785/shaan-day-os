@@ -1,11 +1,17 @@
 'use client';
 
 import { AnalysisResult, Task } from '@/lib/types';
+import { getISTMinutes } from '@/lib/schedule';
 import CapacityBar from '@/components/ui/CapacityBar';
 import DayLoadScore from '@/components/ui/DayLoadScore';
 import MentorCard from '@/components/ui/MentorCard';
 import TimelineBlock from '@/components/ui/TimelineBlock';
 import OverflowCard from '@/components/ui/OverflowCard';
+
+function timeToMin(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
 
 interface AnalysisViewProps {
   analysis: AnalysisResult;
@@ -26,6 +32,12 @@ export default function AnalysisView({
   onDefer,
   reanalyzing,
 }: AnalysisViewProps) {
+  const currentMinutes = getISTMinutes();
+
+  const firstActiveIdx = analysis.schedule.findIndex(
+    (b) => b.type !== 'wake' && b.type !== 'sleep' && timeToMin(b.end) > currentMinutes
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -53,9 +65,24 @@ export default function AnalysisView({
           TODAY&apos;S SCHEDULE
         </h2>
         <div className="space-y-1">
-          {analysis.schedule.map((block) => (
-            <TimelineBlock key={block.id} block={block} />
-          ))}
+          {analysis.schedule.map((block, idx) => {
+            const isPast =
+              block.type !== 'wake' &&
+              block.type !== 'sleep' &&
+              timeToMin(block.end) <= currentMinutes;
+            const isStartHere = idx === firstActiveIdx;
+            return (
+              <div key={block.id}>
+                {isStartHere && (
+                  <div className="flex items-center gap-2 pl-[76px] mb-1 mt-2">
+                    <span className="text-[10px] font-semibold text-accent tracking-widest">▶ NOW</span>
+                    <div className="flex-1 h-px bg-accent/25" />
+                  </div>
+                )}
+                <TimelineBlock block={block} isPast={isPast} />
+              </div>
+            );
+          })}
         </div>
       </div>
 

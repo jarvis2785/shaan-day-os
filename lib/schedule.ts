@@ -3,7 +3,7 @@ import { HEAVY_DAYS, LOW_CAP_DAYS, FREE_DAYS, DAY_NAMES } from './constants';
 
 const IST_TZ = 'Asia/Kolkata';
 
-function getISTMinutes(): number {
+export function getISTMinutes(): number {
   const timeStr = new Date().toLocaleTimeString('en-GB', {
     timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
   });

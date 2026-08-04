@@ -114,6 +114,7 @@ export interface AnalysisInput {
   };
   tasks: Task[];
   deadZoneSettings: DeadZoneSettings;
+  currentTime: string;
 }
 
 export type DayState = 'input' | 'analysis' | 'locked';

@@ -8,6 +8,7 @@ import {
   getTotalWakingMinutes,
   getFreeWindows,
   getDateString,
+  getCurrentTimeStr,
 } from './schedule';
 import { USER_CONTEXT, DEFAULT_DEAD_ZONES } from './constants';
 
@@ -42,6 +43,7 @@ export function buildAnalysisInput(
     },
     tasks,
     deadZoneSettings: settings.deadZones ?? DEFAULT_DEAD_ZONES,
+    currentTime: getCurrentTimeStr(),
   };
 }
 
