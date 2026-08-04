@@ -39,6 +39,7 @@ export default function TodayPage() {
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [, setMinuteTick] = useState(0);
   const reanalysisTimer = useRef<NodeJS.Timeout | null>(null);
   const currentDateRef = useRef('');
 
@@ -79,6 +80,7 @@ export default function TodayPage() {
         currentDateRef.current = nowDate;
         loadDayState(nowDate);
       }
+      setMinuteTick((t) => t + 1);
     }, 60000);
     return () => clearInterval(interval);
   }, [loadDayState]);
