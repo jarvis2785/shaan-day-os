@@ -22,14 +22,22 @@ export default function TimelineBlock({ block, isNow, isCompleted, onMarkDone }:
     );
   }
 
-  if (block.type === 'buffer') {
+  if (block.type === 'buffer' || block.type === 'dead_zone' || block.type === 'meal') {
+    const isDead = block.type === 'dead_zone';
+    const isMeal = block.type === 'meal';
     return (
       <div className="flex items-center gap-3 py-1">
         <span className="font-mono text-xs text-text-muted w-16 shrink-0">
           {formatTimeDisplay(block.start)}
         </span>
-        <div className="flex-1 border-l border-dashed border-border pl-3 py-1">
-          <span className="text-xs text-text-muted">{block.name}</span>
+        <div className={`flex-1 border-l pl-3 py-1 ${
+          isDead ? 'border-amber/40 border-dashed' :
+          isMeal ? 'border-text-muted/30 border-solid' :
+          'border-dashed border-border'
+        }`}>
+          <span className={`text-xs ${isDead ? 'text-amber/70' : 'text-text-muted'}`}>
+            {block.name}
+          </span>
           <span className="font-mono text-xs text-text-muted ml-2">
             {block.estimatedMinutes}min
           </span>

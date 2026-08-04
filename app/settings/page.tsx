@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { UserSettings, FixedBlock } from '@/lib/types';
+import { UserSettings, FixedBlock, DeadZoneSettings } from '@/lib/types';
 import { getSettings, saveSettings, initialize, generateId } from '@/lib/storage';
-import { DAY_NAMES, DAY_FULL_LABELS } from '@/lib/constants';
+import { DAY_NAMES, DAY_FULL_LABELS, DEFAULT_DEAD_ZONES } from '@/lib/constants';
 import Toast from '@/components/ui/Toast';
 
 export default function SettingsPage() {
@@ -83,6 +83,15 @@ export default function SettingsPage() {
     save({
       ...settings,
       schedule: { ...settings.schedule, [day]: dayBlocks },
+    });
+  };
+
+  const deadZones = settings.deadZones ?? DEFAULT_DEAD_ZONES;
+
+  const handleDeadZoneChange = (field: keyof DeadZoneSettings, value: number) => {
+    save({
+      ...settings,
+      deadZones: { ...deadZones, [field]: value },
     });
   };
 
@@ -175,6 +184,36 @@ export default function SettingsPage() {
                 </div>
               </>
             )}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-xs text-text-muted font-semibold tracking-wider mb-4">SMART SCHEDULING</h2>
+          <div className="space-y-3">
+            {([
+              { field: 'morningRoutine' as const, label: 'Morning routine', desc: 'Dead zone after waking up' },
+              { field: 'lunchDuration' as const, label: 'Lunch duration', desc: 'Time reserved for lunch' },
+              { field: 'dinnerDuration' as const, label: 'Dinner duration', desc: 'Time reserved for dinner' },
+              { field: 'gymRecovery' as const, label: 'Gym recovery', desc: 'Shower + food after gym' },
+            ]).map(({ field, label, desc }) => (
+              <div key={field} className="flex items-center justify-between bg-surface rounded-card p-4 border border-border">
+                <div>
+                  <span className="text-sm text-text-body">{label}</span>
+                  <span className="text-xs text-text-muted block mt-0.5">{desc}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={deadZones[field]}
+                    onChange={(e) => handleDeadZoneChange(field, Math.max(0, parseInt(e.target.value) || 0))}
+                    className="bg-bg border border-border rounded-btn px-3 py-2 text-sm text-text-primary font-mono focus:outline-none focus:border-accent/50 w-[70px] text-right"
+                    min={0}
+                    max={120}
+                  />
+                  <span className="text-xs text-text-muted">min</span>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 

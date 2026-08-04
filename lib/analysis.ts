@@ -9,7 +9,7 @@ import {
   getFreeWindows,
   getDateString,
 } from './schedule';
-import { USER_CONTEXT } from './constants';
+import { USER_CONTEXT, DEFAULT_DEAD_ZONES } from './constants';
 import { getGymDoneThisWeek } from './storage';
 
 export function buildAnalysisInput(
@@ -48,6 +48,7 @@ export function buildAnalysisInput(
     gymDone,
     gymPreference: settings.gym.preference,
     gymDuration: settings.gym.duration,
+    deadZoneSettings: settings.deadZones ?? DEFAULT_DEAD_ZONES,
   };
 }
 

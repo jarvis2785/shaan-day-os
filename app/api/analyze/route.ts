@@ -28,11 +28,7 @@ GYM DONE THIS WEEK: ${input.gymDone}
 GYM PREFERENCE: ${input.gymPreference}
 GYM DURATION: ${input.gymDuration} minutes
 
-CONTEXT:
-Role: ${context.userRole}
-Priority Hierarchy: ${JSON.stringify(context.priorityHierarchy)}
-Category Context: ${JSON.stringify(context.categoryContext)}
-Scheduling Rules: ${JSON.stringify(context.schedulingRules)}
+DEAD ZONE SETTINGS: ${JSON.stringify(input.deadZoneSettings)}
 `;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {

@@ -39,11 +39,19 @@ export interface GymConfig {
   preference: 'morning' | 'afternoon' | 'evening' | 'auto';
 }
 
+export interface DeadZoneSettings {
+  morningRoutine: number;
+  lunchDuration: number;
+  dinnerDuration: number;
+  gymRecovery: number;
+}
+
 export interface UserSettings {
   wakeTime: string;
   sleepTime: string;
   gym: GymConfig;
   schedule: DaySchedule;
+  deadZones?: DeadZoneSettings;
 }
 
 export type DayProfile = 'moderate' | 'heavy' | 'low-capacity' | 'free';
@@ -54,7 +62,7 @@ export interface ScheduleBlock {
   name: string;
   start: string;
   end: string;
-  type: 'fixed' | 'task' | 'gym' | 'buffer' | 'wake' | 'sleep';
+  type: 'fixed' | 'task' | 'gym' | 'buffer' | 'wake' | 'sleep' | 'dead_zone' | 'meal';
   category: string | null;
   estimatedMinutes: number;
   energyType: EnergyType | null;
@@ -73,6 +81,7 @@ export interface AnalysisResult {
   dayLoadLabel: DayLoadLabel;
   stats: {
     freeTimeAvailable: string;
+    usableTimeAfterDeadZones?: string;
     totalTasksRequested: number;
     estimatedTaskTime: string;
     tasksScheduled: number;
@@ -81,8 +90,9 @@ export interface AnalysisResult {
   mentorAssessment: string;
   schedule: ScheduleBlock[];
   overflow: OverflowTask[];
-  gymScheduled: boolean;
-  gymSlot: { start: string; end: string } | null;
+  deadZones?: Array<{ start: string; end: string; reason: string }>;
+  gymScheduled?: boolean;
+  gymSlot?: { start: string; end: string } | null;
   warnings: string[];
 }
 
@@ -107,6 +117,7 @@ export interface AnalysisInput {
   gymDone: number;
   gymPreference: string;
   gymDuration: number;
+  deadZoneSettings: DeadZoneSettings;
 }
 
 export type DayState = 'input' | 'analysis' | 'locked';
