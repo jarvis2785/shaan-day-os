@@ -233,7 +233,6 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
                       autoComplete="off"
                       autoCorrect="off"
                       name="task-name-field"
-                      autoFocus
                     />
                   </div>
 
