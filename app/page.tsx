@@ -18,9 +18,7 @@ import {
   getDateString,
   getTodayBlocks,
   getFreeMinutesFromNow,
-  getTotalFreeMinutes,
   getDayName,
-  getHeavyDayContext,
   isBeforeWakeTime,
   getISTTomorrow,
 } from '@/lib/schedule';
@@ -228,8 +226,6 @@ export default function TodayPage() {
   const settings = getSettings();
   const blocks = getTodayBlocks(settings);
   const freeMinutes = getFreeMinutesFromNow(settings.wakeTime, settings.sleepTime, blocks);
-  const dayName = getDayName();
-  const heavyDayContext = getHeavyDayContext(dayName, settings.wakeTime, settings.sleepTime, blocks);
   const beforeWake = isBeforeWakeTime(settings.wakeTime);
 
   return (
@@ -293,7 +289,6 @@ export default function TodayPage() {
           onDeleteTask={handleDeleteTask}
           onAnalyze={handleAnalyze}
           loading={loading}
-          heavyDayContext={heavyDayContext}
           isBeforeWake={beforeWake}
         />
       )}

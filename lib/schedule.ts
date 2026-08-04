@@ -76,14 +76,13 @@ export function getFreeMinutesFromNow(
 
   const remaining = sleepMin - nowMin;
   const futureBlocks = blocks.filter((b) => timeToMinutes(b.end) > nowMin);
-  const futureFixed = futureBlocks.reduce((sum, b) => {
-    const start = Math.max(timeToMinutes(b.start), nowMin);
-    const end = timeToMinutes(b.end);
-    return sum + (end - start);
-  }, 0);
-  const futureTransitions = futureBlocks.length * 30;
-  const meals = 45;
-  return Math.max(0, remaining - futureFixed - futureTransitions - meals);
+  const futureFixed = blocks
+    .filter((b) => timeToMinutes(b.end) > nowMin)
+    .reduce((sum, b) => {
+      const start = Math.max(timeToMinutes(b.start), nowMin);
+      return sum + (timeToMinutes(b.end) - start);
+    }, 0);
+  return Math.max(0, remaining - futureFixed);
 }
 
 export function isBeforeWakeTime(wakeTime: string): boolean {

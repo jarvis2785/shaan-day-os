@@ -14,7 +14,6 @@ interface TaskInputViewProps {
   onDeleteTask: (id: string) => void;
   onAnalyze: () => void;
   loading: boolean;
-  heavyDayContext: string | null;
   isBeforeWake: boolean;
 }
 
@@ -27,7 +26,6 @@ export default function TaskInputView({
   onDeleteTask,
   onAnalyze,
   loading,
-  heavyDayContext,
   isBeforeWake,
 }: TaskInputViewProps) {
   const [now, setNow] = useState(getCurrentTimeStr());
@@ -73,16 +71,11 @@ export default function TaskInputView({
 
       <div className="text-center py-2">
         <div className="text-xs text-text-muted font-medium tracking-wider">
-          {isBeforeWake ? 'FREE TIME TODAY' : 'FREE TIME FROM NOW'}
+          {isBeforeWake ? 'FREE TIME TODAY' : 'FREE TIME REMAINING'}
         </div>
         <div className="font-display text-3xl font-bold text-accent mt-1">
           ~{minutesToHoursDisplay(freeMinutes)}
         </div>
-        {heavyDayContext && (
-          <div className="text-xs text-amber mt-2 font-medium">
-            {heavyDayContext}
-          </div>
-        )}
       </div>
 
       <div className="border-t border-border pt-5">
