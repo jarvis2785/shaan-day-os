@@ -33,8 +33,19 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
   const [estimateSuggested, setEstimateSuggested] = useState<number | null>(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [bottomOffset, setBottomOffset] = useState(0);
+  const [sheetMaxHeight, setSheetMaxHeight] = useState('88vh');
   const estimateAbortRef = useRef<AbortController | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const estimateInputRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
   const dragControls = useDragControls();
+
+  const scrollIntoViewDelayed = (el: HTMLElement | null) => {
+    if (!el) return;
+    setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  };
 
   useEffect(() => {
     if (editTask) {
@@ -56,10 +67,11 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
     setEstimateSuggested(null);
   }, [editTask, open]);
 
-  // Keyboard avoidance via visualViewport (iOS PWA)
+  // Keyboard avoidance + sheet height via visualViewport (iOS PWA)
   useEffect(() => {
     if (!open) {
       setBottomOffset(0);
+      setSheetMaxHeight('88vh');
       return;
     }
     const vv = window.visualViewport;
@@ -68,6 +80,12 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
     const handleResize = () => {
       const keyboardHeight = window.innerHeight - vv.height - vv.pageTop;
       setBottomOffset(Math.max(0, keyboardHeight));
+      // Shrink sheet to fit visible space above keyboard, keeping 20px breathing room at top
+      if (keyboardHeight > 0) {
+        setSheetMaxHeight(`${vv.height - 20}px`);
+      } else {
+        setSheetMaxHeight('88vh');
+      }
     };
 
     vv.addEventListener('resize', handleResize);
@@ -151,10 +169,10 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
             className="absolute left-0 right-0 flex flex-col"
             style={{
               bottom: bottomOffset,
-              transition: 'bottom 0.25s ease-out',
+              transition: 'bottom 0.25s ease-out, max-height 0.25s ease-out',
               backgroundColor: '#1C1C1E',
               borderRadius: '20px 20px 0 0',
-              maxHeight: '88vh',
+              maxHeight: sheetMaxHeight,
             }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
@@ -200,9 +218,11 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
                       TASK NAME
                     </label>
                     <input
+                      ref={nameInputRef}
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
+                      onFocus={() => scrollIntoViewDelayed(nameInputRef.current)}
                       placeholder="What do you need to do?"
                       className="w-full rounded-btn px-4 py-3 text-[15px] focus:outline-none"
                       style={{
@@ -210,6 +230,9 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
                         color: '#FFFFFF',
                         border: '1px solid #2C2C2E',
                       }}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      name="task-name-field"
                       autoFocus
                     />
                   </div>
@@ -288,6 +311,7 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
                       ESTIMATED TIME <span style={{ opacity: 0.5 }}>(optional)</span>
                     </label>
                     <input
+                      ref={estimateInputRef}
                       type="number"
                       value={estimatedMinutes}
                       onChange={(e) => {
@@ -295,6 +319,7 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
                         setEstimateWarning(null);
                         setEstimateSuggested(null);
                       }}
+                      onFocus={() => scrollIntoViewDelayed(estimateInputRef.current)}
                       onBlur={handleEstimateBlur}
                       placeholder="minutes"
                       className="w-32 rounded-btn px-4 py-3 text-[15px] font-mono focus:outline-none"
@@ -349,8 +374,10 @@ export default function BottomSheet({ open, onClose, onSave, editTask }: BottomS
                       NOTES <span style={{ opacity: 0.5 }}>(optional)</span>
                     </label>
                     <textarea
+                      ref={notesRef}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
+                      onFocus={() => scrollIntoViewDelayed(notesRef.current)}
                       placeholder="Any context the AI should know..."
                       rows={2}
                       className="w-full rounded-btn px-4 py-3 text-[15px] focus:outline-none resize-none"
