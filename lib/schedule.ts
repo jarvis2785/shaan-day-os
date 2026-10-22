@@ -1,5 +1,5 @@
 import { FixedBlock, TimeWindow, DayProfile, UserSettings } from './types';
-import { HEAVY_DAYS, LOW_CAP_DAYS, FREE_DAYS, DAY_NAMES } from './constants';
+import { DAY_NAMES } from './constants';
 
 const IST_TZ = 'Asia/Kolkata';
 
@@ -41,20 +41,48 @@ export function getTotalWakingMinutes(wakeTime: string, sleepTime: string): numb
   return timeToMinutes(sleepTime) - timeToMinutes(wakeTime);
 }
 
-export function getTransitionBufferMinutes(blocks: FixedBlock[]): number {
-  return blocks.length * 30;
+export function getFreeMinutes(
+  wakeTime: string,
+  sleepTime: string,
+  blocks: FixedBlock[],
+  isToday: boolean = false,
+  nowMinutes?: number
+): number {
+  const wakeMin = timeToMinutes(wakeTime);
+  const sleepMin = timeToMinutes(sleepTime);
+
+  if (!isToday) {
+    const waking = sleepMin - wakeMin;
+    const fixed = getTotalFixedMinutes(blocks);
+    return Math.max(0, waking - fixed);
+  }
+
+  const now = nowMinutes ?? getISTMinutes();
+
+  if (now < wakeMin) {
+    const waking = sleepMin - wakeMin;
+    const fixed = getTotalFixedMinutes(blocks);
+    return Math.max(0, waking - fixed);
+  }
+
+  if (now >= sleepMin) return 0;
+
+  const remaining = sleepMin - now;
+  const futureFixed = blocks
+    .filter((b) => timeToMinutes(b.end) > now)
+    .reduce((sum, b) => {
+      const start = Math.max(timeToMinutes(b.start), now);
+      return sum + (timeToMinutes(b.end) - start);
+    }, 0);
+  return Math.max(0, remaining - futureFixed);
 }
 
-export function getTotalFreeMinutes(
+export function getRawFreeMinutes(
   wakeTime: string,
   sleepTime: string,
   blocks: FixedBlock[]
 ): number {
-  const waking = getTotalWakingMinutes(wakeTime, sleepTime);
-  const fixed = getTotalFixedMinutes(blocks);
-  const buffer = getTransitionBufferMinutes(blocks);
-  const meals = 45;
-  return Math.max(0, waking - fixed - buffer - meals);
+  return getFreeMinutes(wakeTime, sleepTime, blocks, false);
 }
 
 export function getFreeMinutesFromNow(
@@ -62,27 +90,7 @@ export function getFreeMinutesFromNow(
   sleepTime: string,
   blocks: FixedBlock[]
 ): number {
-  const nowMin = getISTMinutes();
-  const wakeMin = timeToMinutes(wakeTime);
-  const sleepMin = timeToMinutes(sleepTime);
-
-  if (nowMin < wakeMin) {
-    const waking = sleepMin - wakeMin;
-    const fixed = getTotalFixedMinutes(blocks);
-    return Math.max(0, waking - fixed);
-  }
-
-  if (nowMin >= sleepMin) return 0;
-
-  const remaining = sleepMin - nowMin;
-  const futureBlocks = blocks.filter((b) => timeToMinutes(b.end) > nowMin);
-  const futureFixed = blocks
-    .filter((b) => timeToMinutes(b.end) > nowMin)
-    .reduce((sum, b) => {
-      const start = Math.max(timeToMinutes(b.start), nowMin);
-      return sum + (timeToMinutes(b.end) - start);
-    }, 0);
-  return Math.max(0, remaining - futureFixed);
+  return getFreeMinutes(wakeTime, sleepTime, blocks, true);
 }
 
 export function isBeforeWakeTime(wakeTime: string): boolean {
@@ -99,10 +107,11 @@ export function getHeavyDayContext(
   dayName: string,
   wakeTime: string,
   sleepTime: string,
-  blocks: FixedBlock[]
+  blocks: FixedBlock[],
+  settings: UserSettings
 ): string | null {
-  const lower = dayName.toLowerCase();
-  if (!HEAVY_DAYS.includes(lower)) return null;
+  const profile = getDayProfile(dayName, settings);
+  if (profile !== 'heavy') return null;
 
   const windows = getFreeWindows(wakeTime, sleepTime, blocks);
   const bigWindows = windows.filter((w) => w.durationMinutes >= 60);
@@ -116,7 +125,8 @@ export function getHeavyDayContext(
 export function getFreeWindows(
   wakeTime: string,
   sleepTime: string,
-  blocks: FixedBlock[]
+  blocks: FixedBlock[],
+  nowMinutes?: number
 ): TimeWindow[] {
   const sorted = [...blocks].sort(
     (a, b) => timeToMinutes(a.start) - timeToMinutes(b.start)
@@ -132,7 +142,7 @@ export function getFreeWindows(
     const blockStart = timeToMinutes(block.start);
     if (cursor < blockStart) {
       const duration = blockStart - cursor;
-      if (duration >= 30) {
+      if (duration >= 15) {
         windows.push({
           start: minutesToTime(cursor),
           end: minutesToTime(blockStart),
@@ -141,23 +151,39 @@ export function getFreeWindows(
         });
       }
     }
-    const blockEnd = timeToMinutes(block.end) + 30;
+    const blockEnd = timeToMinutes(block.end);
     cursor = Math.max(cursor, blockEnd);
   }
 
-  if (cursor < sleepMin - 30) {
-    const duration = sleepMin - 30 - cursor;
-    if (duration >= 30) {
+  if (cursor < sleepMin) {
+    const duration = sleepMin - cursor;
+    if (duration >= 15) {
       windows.push({
         start: minutesToTime(cursor),
-        end: minutesToTime(sleepMin - 30),
+        end: minutesToTime(sleepMin),
         durationMinutes: duration,
         quality: getTimeQuality(cursor),
       });
     }
   }
 
-  return windows;
+  if (nowMinutes === undefined) return windows;
+
+  return windows
+    .filter((w) => timeToMinutes(w.end) > nowMinutes)
+    .map((w) => {
+      const wStart = timeToMinutes(w.start);
+      if (wStart >= nowMinutes) return w;
+      const trimmedStart = nowMinutes;
+      const duration = timeToMinutes(w.end) - trimmedStart;
+      return {
+        start: minutesToTime(trimmedStart),
+        end: w.end,
+        durationMinutes: duration,
+        quality: getTimeQuality(trimmedStart),
+      };
+    })
+    .filter((w) => w.durationMinutes >= 15);
 }
 
 function getTimeQuality(minutesFromMidnight: number): 'prime' | 'good' | 'low' {
@@ -166,12 +192,8 @@ function getTimeQuality(minutesFromMidnight: number): 'prime' | 'good' | 'low' {
   return 'low';
 }
 
-export function getDayProfile(dayName: string): DayProfile {
-  const lower = dayName.toLowerCase();
-  if (HEAVY_DAYS.includes(lower)) return 'heavy';
-  if (LOW_CAP_DAYS.includes(lower)) return 'low-capacity';
-  if (FREE_DAYS.includes(lower)) return 'free';
-  return 'moderate';
+export function getDayProfile(dayName: string, settings: UserSettings): DayProfile {
+  return settings.dayTypes?.[dayName.toLowerCase()] ?? 'moderate';
 }
 
 export function getDayName(date: Date = new Date()): string {
@@ -182,7 +204,26 @@ export function getDayName(date: Date = new Date()): string {
 
 export function getTodayBlocks(settings: UserSettings, date: Date = new Date()): FixedBlock[] {
   const dayName = getDayName(date);
-  return settings.schedule[dayName] || [];
+  const scheduleBlocks = settings.schedule[dayName] || [];
+
+  if (settings.gym.enabled) {
+    const gymTime = settings.gym.sessions?.[dayName];
+    if (gymTime) {
+      const gymEndMin = timeToMinutes(gymTime) + (settings.gym.durationMinutes || 75);
+      const gymBlock: FixedBlock = {
+        id: `gym-${dayName}`,
+        name: 'Gym',
+        start: gymTime,
+        end: minutesToTime(gymEndMin),
+        type: 'gym',
+      };
+      return [...scheduleBlocks, gymBlock].sort(
+        (a, b) => timeToMinutes(a.start) - timeToMinutes(b.start)
+      );
+    }
+  }
+
+  return scheduleBlocks;
 }
 
 export function formatDate(date: Date = new Date()): string {
@@ -212,12 +253,14 @@ export function getISTStartOfWeekString(): string {
   return getDateString(sundayDate);
 }
 
-export function getDayLabel(dayName: string): string {
-  const lower = dayName.toLowerCase();
-  if (HEAVY_DAYS.includes(lower)) return 'HEAVY';
-  if (LOW_CAP_DAYS.includes(lower)) return 'LOW CAP';
-  if (FREE_DAYS.includes(lower)) return 'FREE';
-  return '';
+export function getDayLabel(dayName: string, settings: UserSettings): string {
+  const profile = getDayProfile(dayName, settings);
+  switch (profile) {
+    case 'heavy': return 'HEAVY';
+    case 'low-capacity': return 'LOW CAP';
+    case 'free': return 'FREE';
+    default: return '';
+  }
 }
 
 export function minutesToHoursDisplay(minutes: number): string {

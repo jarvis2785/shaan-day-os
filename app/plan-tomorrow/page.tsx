@@ -8,7 +8,7 @@ import { getSettings, savePlannedTasks, generateId } from '@/lib/storage';
 import {
   getISTTomorrow,
   getTodayBlocks,
-  getTotalFreeMinutes,
+  getRawFreeMinutes,
   formatTimeDisplay,
   minutesToHoursDisplay,
   getDayName,
@@ -34,7 +34,7 @@ export default function PlanTomorrowPage() {
   const tomorrow = getISTTomorrow();
   const settings = getSettings();
   const tomorrowBlocks = getTodayBlocks(settings, tomorrow);
-  const freeMinutes = getTotalFreeMinutes(settings.wakeTime, settings.sleepTime, tomorrowBlocks);
+  const freeMinutes = getRawFreeMinutes(settings.wakeTime, settings.sleepTime, tomorrowBlocks);
   const freeColor = getFreeTimeColor(freeMinutes);
 
   const tomorrowLabel = tomorrow.toLocaleDateString('en-US', {

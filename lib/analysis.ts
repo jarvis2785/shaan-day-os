@@ -1,18 +1,19 @@
-import { AnalysisInput, Task, UserSettings, DayProfile } from './types';
+import { AnalysisInput, Task, UserSettings } from './types';
 import {
   getDayName,
   getDayProfile,
   getTodayBlocks,
   getTotalFixedMinutes,
-  getTotalFreeMinutes,
+  getFreeMinutes,
   getTotalWakingMinutes,
   getFreeWindows,
   getDateString,
   getCurrentTimeStr,
+  getISTMinutes,
   timeToMinutes,
   minutesToTime,
 } from './schedule';
-import { USER_CONTEXT, DEFAULT_DEAD_ZONES } from './constants';
+import { DEFAULT_DEAD_ZONES } from './constants';
 
 export function buildAnalysisInput(
   settings: UserSettings,
@@ -23,13 +24,14 @@ export function buildAnalysisInput(
   const blocks = getTodayBlocks(settings, date);
   const totalFixedMinutes = getTotalFixedMinutes(blocks);
   const totalWakingMinutes = getTotalWakingMinutes(settings.wakeTime, settings.sleepTime);
-  const totalFreeMinutes = getTotalFreeMinutes(settings.wakeTime, settings.sleepTime, blocks);
-  const freeWindows = getFreeWindows(settings.wakeTime, settings.sleepTime, blocks);
-  const dayProfile = getDayProfile(dayName);
+  const nowMin = getISTMinutes();
+  const totalFreeMinutes = getFreeMinutes(settings.wakeTime, settings.sleepTime, blocks, true, nowMin);
+  const freeWindows = getFreeWindows(settings.wakeTime, settings.sleepTime, blocks, nowMin);
+  const dayProfile = getDayProfile(dayName, settings);
 
   const deadZones = settings.deadZones ?? DEFAULT_DEAD_ZONES;
   const morningRoutineEnd = timeToMinutes(settings.wakeTime) + deadZones.morningRoutine;
-  const noTaskBefore = minutesToTime(morningRoutineEnd);
+  const noTaskBefore = minutesToTime(Math.max(morningRoutineEnd, nowMin));
 
   return {
     user: {
@@ -61,9 +63,6 @@ export async function analyzeDay(input: AnalysisInput): Promise<Response> {
   return fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      input,
-      context: USER_CONTEXT,
-    }),
+    body: JSON.stringify({ input }),
   });
 }

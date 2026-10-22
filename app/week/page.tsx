@@ -5,26 +5,23 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { DayPlan } from '@/lib/types';
 import { getSettings, getDayPlan, initialize } from '@/lib/storage';
-import {
-  DAY_NAMES,
-  DAY_LABELS,
-  HEAVY_DAYS,
-  LOW_CAP_DAYS,
-  FREE_DAYS,
-} from '@/lib/constants';
+import { DAY_NAMES, DAY_LABELS } from '@/lib/constants';
 import {
   getTotalFixedMinutes,
   getTotalWakingMinutes,
   getDayLabel,
+  getDayProfile,
   getDateString,
   getDayName,
 } from '@/lib/schedule';
+import { UserSettings } from '@/lib/types';
 
-function getStatusColor(label: string, dayName: string, plan: DayPlan | null): string {
+function getStatusColor(label: string, dayName: string, plan: DayPlan | null, settings: UserSettings): string {
   if (plan?.state === 'locked') return '#30D158';
   if (plan?.state === 'analysis') return '#FFD60A';
-  if (HEAVY_DAYS.includes(dayName)) return '#FFD60A';
-  if (LOW_CAP_DAYS.includes(dayName)) return '#FF453A';
+  const profile = getDayProfile(dayName, settings);
+  if (profile === 'heavy') return '#FFD60A';
+  if (profile === 'low-capacity') return '#FF453A';
   return '#48484A';
 }
 
@@ -40,6 +37,7 @@ function getMiniRingColor(percent: number): string {
 
 export default function WeekPage() {
   const [mounted, setMounted] = useState(false);
+  const [settings, setSettingsState] = useState<UserSettings | null>(null);
   const [weekData, setWeekData] = useState<
     {
       dayName: string;
@@ -56,6 +54,7 @@ export default function WeekPage() {
   useEffect(() => {
     initialize();
     const settings = getSettings();
+    setSettingsState(settings);
     const todayDayName = getDayName();
     const todayDow = DAY_NAMES.indexOf(todayDayName as typeof DAY_NAMES[number]);
     const now = Date.now();
@@ -78,7 +77,7 @@ export default function WeekPage() {
       const fixedPercent = Math.round((fixedMin / wakingMin) * 100);
       const taskPercent = Math.round((taskMin / wakingMin) * 100);
 
-      let statusLabel = getDayLabel(dayName);
+      let statusLabel = getDayLabel(dayName, settings);
       if (plan?.state === 'locked') statusLabel = 'Locked';
       else if (plan?.state === 'analysis') statusLabel = 'Planned';
 
@@ -110,7 +109,7 @@ export default function WeekPage() {
           const isToday = day.dateStr === todayStr;
           const ringPercent = getMiniRingPercent(day.fixedPercent, day.taskPercent);
           const ringColor = getMiniRingColor(ringPercent);
-          const statusColor = getStatusColor(day.statusLabel, day.dayName, day.plan);
+          const statusColor = getStatusColor(day.statusLabel, day.dayName, day.plan, settings!);
 
           const size = 32;
           const sw = 3;

@@ -119,7 +119,8 @@ export default function TodayPage() {
     try {
       const res = await analyzeDay(input);
       if (!res.ok) {
-        throw new Error('API call failed');
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Analysis failed');
       }
       const result: AnalysisResult = await res.json();
       setAnalysis(result);
@@ -132,8 +133,8 @@ export default function TodayPage() {
         lockedAt: null,
         completedTaskIds: [],
       });
-    } catch {
-      setError("Couldn't reach the brain. Check connection.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't reach the brain. Check connection.");
     }
   }, []);
 

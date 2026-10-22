@@ -34,9 +34,8 @@ export interface DaySchedule {
 
 export interface GymConfig {
   enabled: boolean;
-  frequency: number;
-  duration: number;
-  preference: 'morning' | 'afternoon' | 'evening' | 'auto';
+  durationMinutes: number;
+  sessions: { [day: string]: string | null };
 }
 
 export interface DeadZoneSettings {
@@ -52,6 +51,7 @@ export interface UserSettings {
   gym: GymConfig;
   schedule: DaySchedule;
   deadZones?: DeadZoneSettings;
+  dayTypes?: Record<string, DayProfile>;
 }
 
 export type DayProfile = 'moderate' | 'heavy' | 'low-capacity' | 'free';

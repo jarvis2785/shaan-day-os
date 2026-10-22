@@ -1,5 +1,5 @@
 import { UserSettings, DayPlan, Task } from './types';
-import { DEFAULT_SETTINGS } from './constants';
+import { DEFAULT_SETTINGS, DEFAULT_DAY_TYPES } from './constants';
 import { getDateString, getISTStartOfWeekString } from './schedule';
 
 const SETTINGS_KEY = 'dayos_settings';
@@ -20,6 +20,50 @@ export function initialize(): void {
   }
 }
 
+function migrateSettings(settings: any): UserSettings {
+  let changed = false;
+
+  if (settings.gym && !settings.gym.days && !settings.gym.sessions) {
+    const old = settings.gym;
+    const freq = old.frequency ?? 4;
+    const defaultDays = ['monday', 'wednesday', 'friday', 'saturday', 'sunday'];
+    let preferredTime = '17:00';
+    if (old.preference === 'morning') preferredTime = '06:30';
+    else if (old.preference === 'afternoon') preferredTime = '14:00';
+    else if (old.preference === 'evening') preferredTime = '18:00';
+
+    settings.gym = {
+      enabled: old.enabled ?? true,
+      durationMinutes: old.duration ?? 75,
+      preferredTime,
+      days: defaultDays.slice(0, freq),
+    };
+    changed = true;
+  }
+
+  if (settings.gym && settings.gym.days && !settings.gym.sessions) {
+    const { preferredTime, days, enabled, durationMinutes } = settings.gym;
+    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const sessions: { [day: string]: string | null } = {};
+    for (const d of allDays) {
+      sessions[d] = (days || []).includes(d) ? (preferredTime || '17:00') : null;
+    }
+    settings.gym = { enabled: enabled ?? true, durationMinutes: durationMinutes ?? 75, sessions };
+    changed = true;
+  }
+
+  if (!settings.dayTypes) {
+    settings.dayTypes = DEFAULT_DAY_TYPES;
+    changed = true;
+  }
+
+  if (changed) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+
+  return settings as UserSettings;
+}
+
 export function getSettings(): UserSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   const raw = localStorage.getItem(SETTINGS_KEY);
@@ -28,7 +72,7 @@ export function getSettings(): UserSettings {
     return DEFAULT_SETTINGS;
   }
   try {
-    return JSON.parse(raw);
+    return migrateSettings(JSON.parse(raw));
   } catch {
     return DEFAULT_SETTINGS;
   }

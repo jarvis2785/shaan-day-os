@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UserSettings, FixedBlock, DeadZoneSettings } from '@/lib/types';
+import { UserSettings, FixedBlock, DeadZoneSettings, DayProfile } from '@/lib/types';
 import { getSettings, saveSettings, initialize, generateId } from '@/lib/storage';
-import { DAY_NAMES, DAY_FULL_LABELS, DEFAULT_DEAD_ZONES } from '@/lib/constants';
+import { DAY_NAMES, DAY_FULL_LABELS, DEFAULT_DEAD_ZONES, DEFAULT_DAY_TYPES } from '@/lib/constants';
 import Toast from '@/components/ui/Toast';
 
 export default function SettingsPage() {
@@ -46,6 +46,23 @@ export default function SettingsPage() {
 
   const handleGymChange = (field: string, value: string | number) => {
     save({ ...settings, gym: { ...settings.gym, [field]: value } });
+  };
+
+  const handleGymDayToggle = (day: string) => {
+    const sessions = { ...(settings.gym.sessions || {}) };
+    sessions[day] = sessions[day] ? null : '17:00';
+    save({ ...settings, gym: { ...settings.gym, sessions } });
+  };
+
+  const handleGymDayTimeChange = (day: string, time: string) => {
+    const sessions = { ...(settings.gym.sessions || {}) };
+    sessions[day] = time;
+    save({ ...settings, gym: { ...settings.gym, sessions } });
+  };
+
+  const handleDayTypeChange = (day: string, profile: DayProfile) => {
+    const dayTypes = { ...(settings.dayTypes ?? DEFAULT_DAY_TYPES), [day]: profile };
+    save({ ...settings, dayTypes });
   };
 
   const handleAddBlock = (day: string) => {
@@ -151,39 +168,45 @@ export default function SettingsPage() {
                   className="overflow-hidden"
                 >
                   <div className="divide-y" style={{ borderColor: '#2C2C2E' }}>
-                    <SettingsRow label="Per week">
-                      <select
-                        value={settings.gym.frequency}
-                        onChange={(e) => handleGymChange('frequency', parseInt(e.target.value))}
-                        className="rounded-btn px-3 py-2 text-[15px] focus:outline-none"
-                        style={{ backgroundColor: '#111111', color: '#FFFFFF', border: '1px solid #2C2C2E' }}
-                      >
-                        {[2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}x</option>)}
-                      </select>
-                    </SettingsRow>
                     <SettingsRow label="Duration">
                       <select
-                        value={settings.gym.duration}
-                        onChange={(e) => handleGymChange('duration', parseInt(e.target.value))}
+                        value={settings.gym.durationMinutes || 75}
+                        onChange={(e) => handleGymChange('durationMinutes', parseInt(e.target.value))}
                         className="rounded-btn px-3 py-2 text-[15px] focus:outline-none"
                         style={{ backgroundColor: '#111111', color: '#FFFFFF', border: '1px solid #2C2C2E' }}
                       >
                         {[45, 60, 75, 90, 120].map((n) => <option key={n} value={n}>{n} min</option>)}
                       </select>
                     </SettingsRow>
-                    <SettingsRow label="Preferred time">
-                      <select
-                        value={settings.gym.preference}
-                        onChange={(e) => handleGymChange('preference', e.target.value)}
-                        className="rounded-btn px-3 py-2 text-[15px] focus:outline-none"
-                        style={{ backgroundColor: '#111111', color: '#FFFFFF', border: '1px solid #2C2C2E' }}
-                      >
-                        <option value="auto">Let AI decide</option>
-                        <option value="morning">Morning</option>
-                        <option value="afternoon">Afternoon</option>
-                        <option value="evening">Evening</option>
-                      </select>
-                    </SettingsRow>
+                    <div className="p-4 space-y-2.5" style={{ backgroundColor: '#1C1C1E' }}>
+                      <span className="text-[15px] block mb-3" style={{ color: '#8E8E93' }}>Days & times</span>
+                      {DAY_NAMES.map((day, idx) => {
+                        const session = (settings.gym.sessions || {})[day];
+                        const isActive = !!session;
+                        return (
+                          <div key={day} className="flex items-center justify-between">
+                            <button
+                              onClick={() => handleGymDayToggle(day)}
+                              className="text-[14px] font-medium w-10"
+                              style={{ color: isActive ? '#30D158' : '#48484A' }}
+                            >
+                              {DAY_FULL_LABELS[idx].slice(0, 3)}
+                            </button>
+                            {isActive ? (
+                              <input
+                                type="time"
+                                value={session}
+                                onChange={(e) => handleGymDayTimeChange(day, e.target.value)}
+                                className="rounded-btn px-2 py-1.5 text-[13px] font-mono focus:outline-none"
+                                style={{ backgroundColor: '#111111', color: '#FFFFFF', border: '1px solid #2C2C2E' }}
+                              />
+                            ) : (
+                              <span className="text-[13px]" style={{ color: '#48484A' }}>Off</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -217,6 +240,33 @@ export default function SettingsPage() {
                 </div>
               </SettingsRow>
             ))}
+          </div>
+        </section>
+
+        <section>
+          <div className="text-[11px] font-semibold tracking-[0.15em] uppercase mb-3" style={{ color: '#48484A' }}>
+            DAY TYPES
+          </div>
+          <div className="rounded-card overflow-hidden divide-y" style={{ borderColor: '#2C2C2E' }}>
+            {DAY_NAMES.map((day, idx) => {
+              const dayTypes = settings.dayTypes ?? DEFAULT_DAY_TYPES;
+              const currentType = dayTypes[day] ?? 'moderate';
+              return (
+                <SettingsRow key={day} label={DAY_FULL_LABELS[idx]}>
+                  <select
+                    value={currentType}
+                    onChange={(e) => handleDayTypeChange(day, e.target.value as DayProfile)}
+                    className="rounded-btn px-3 py-2 text-[13px] focus:outline-none"
+                    style={{ backgroundColor: '#111111', color: '#FFFFFF', border: '1px solid #2C2C2E' }}
+                  >
+                    <option value="moderate">Moderate</option>
+                    <option value="heavy">Heavy</option>
+                    <option value="low-capacity">Low Cap</option>
+                    <option value="free">Free</option>
+                  </select>
+                </SettingsRow>
+              );
+            })}
           </div>
         </section>
 
