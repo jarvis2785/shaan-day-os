@@ -120,7 +120,7 @@ export default function TodayPage() {
       const res = await analyzeDay(input);
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error || 'Analysis failed');
+        throw new Error(data?.message || data?.error || 'Analysis failed');
       }
       const result: AnalysisResult = await res.json();
       setAnalysis(result);

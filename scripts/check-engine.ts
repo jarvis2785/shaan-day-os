@@ -1,5 +1,7 @@
 import { getFreeMinutes, getRawFreeMinutes, getFreeWindows, getTodayBlocks, timeToMinutes, minutesToTime } from '../lib/schedule';
 import { validateAnalysis } from '../lib/validate';
+import { computeScore, computeStats } from '../lib/score';
+import { runAnalysisFlow, CallClaudeFn, ClaudeResponse } from '../lib/analyzeFlow';
 import { AnalysisResult, AnalysisInput, FixedBlock, UserSettings } from '../lib/types';
 import { DEFAULT_SETTINGS } from '../lib/constants';
 
@@ -481,7 +483,553 @@ assert(
 );
 
 // ============================================================
-// RESULTS
+// SCORE AND STATS (lib/score.ts)
 // ============================================================
-console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
-process.exit(failed > 0 ? 1 : 0);
+console.log('\n--- Score and stats ---');
+
+// Example 1: Thursday 19:00, OVERLOADED capped at 150
+{
+  const input: AnalysisInput = {
+    user: { name: 'Test', wakeTime: '06:30', sleepTime: '23:30', totalWakingHours: 17 },
+    today: {
+      date: '2026-10-22', dayName: 'Thursday', dayProfile: 'heavy',
+      fixedBlocks: [{ id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'class' }],
+      totalFixedMinutes: 60, totalFreeMinutes: 270, freeWindows: [],
+    },
+    tasks: [
+      { id: 'client', name: 'Client work', category: 'agency_client', deadline: 'today', priority: 'high', estimatedMinutes: 150, notes: null },
+      { id: 'study', name: 'Study', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 120, notes: null },
+      { id: 'reel', name: 'Reel', category: 'personal_brand', deadline: 'today', priority: 'medium', estimatedMinutes: 90, notes: null },
+      { id: 'proposal', name: 'Proposal', category: 'agency_client', deadline: 'today', priority: 'medium', estimatedMinutes: 90, notes: null },
+    ],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 45 },
+    currentTime: '19:00',
+    constraints: { noTaskBefore: '07:05', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test',
+    schedule: [
+      { id: 'client', name: 'Client work', start: '19:30', end: '22:00', type: 'task', category: 'agency_client', estimatedMinutes: 150, energyType: 'deep_focus', notes: null },
+    ],
+    overflow: [
+      { id: 'study', name: 'Study', reason: 'no time', suggestedDay: null },
+      { id: 'reel', name: 'Reel', reason: 'no time', suggestedDay: null },
+      { id: 'proposal', name: 'Proposal', reason: 'no time', suggestedDay: null },
+    ],
+    warnings: [],
+  };
+  computeScore(result, input, 19 * 60);
+  assert(result.dayLoadPercent === 150, `Score ex1: 150 cap, got ${result.dayLoadPercent}`);
+  assert(result.dayLoadLabel === 'OVERLOADED', `Score ex1: OVERLOADED, got ${result.dayLoadLabel}`);
+}
+
+// Example 2a: Thursday 13:00, requested 380, TIGHT
+{
+  const input: AnalysisInput = {
+    ...mockInput,
+    today: { ...mockInput.today, totalFreeMinutes: 540 },
+    tasks: [
+      { id: 't1', name: 'A', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 200, notes: null },
+      { id: 't2', name: 'B', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 180, notes: null },
+    ],
+    currentTime: '13:00',
+    constraints: { noTaskBefore: '07:05', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [
+      { id: 't1', name: 'A', reason: 'no time', suggestedDay: null },
+      { id: 't2', name: 'B', reason: 'no time', suggestedDay: null },
+    ], warnings: [],
+  };
+  computeScore(result, input, 13 * 60);
+  // usable = 540 - 60 (lunch+dinner) = 480. 380/480 = 79.2 → 79
+  assert(result.dayLoadPercent === 79, `Score ex2a: 79, got ${result.dayLoadPercent}`);
+  assert(result.dayLoadLabel === 'TIGHT', `Score ex2a: TIGHT, got ${result.dayLoadLabel}`);
+}
+
+// Example 2b: same setup, requested 650, OVERLOADED
+{
+  const input: AnalysisInput = {
+    ...mockInput,
+    today: { ...mockInput.today, totalFreeMinutes: 540 },
+    tasks: [
+      { id: 't1', name: 'A', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 350, notes: null },
+      { id: 't2', name: 'B', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 300, notes: null },
+    ],
+    currentTime: '13:00',
+    constraints: { noTaskBefore: '07:05', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [
+      { id: 't1', name: 'A', reason: 'no time', suggestedDay: null },
+      { id: 't2', name: 'B', reason: 'no time', suggestedDay: null },
+    ], warnings: [],
+  };
+  computeScore(result, input, 13 * 60);
+  // 650/480 = 135.4 → 135
+  assert(result.dayLoadPercent === 135, `Score ex2b: 135, got ${result.dayLoadPercent}`);
+  assert(result.dayLoadLabel === 'OVERLOADED', `Score ex2b: OVERLOADED, got ${result.dayLoadLabel}`);
+}
+
+// Example 3: all tasks no estimate — use category defaults
+{
+  const input: AnalysisInput = {
+    ...mockInput,
+    today: { ...mockInput.today, totalFreeMinutes: 500 },
+    tasks: [
+      { id: 't1', name: 'A', category: 'agency_client', deadline: 'today', priority: 'high', estimatedMinutes: null, notes: null },
+      { id: 't2', name: 'B', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: null, notes: null },
+      { id: 't3', name: 'C', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: null, notes: null },
+    ],
+    currentTime: '13:00',
+    constraints: { noTaskBefore: '07:05', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [], warnings: [],
+  };
+  computeScore(result, input, 13 * 60);
+  // requested = 120+90+30 = 240. usable = 500-60 = 440. 240/440 = 54.5 → 55
+  assert(result.dayLoadPercent === 55, `Score ex3: 55 (category defaults), got ${result.dayLoadPercent}`);
+}
+
+// Example 4: split task 60+60, counted once as 120
+{
+  const input: AnalysisInput = {
+    ...mockInput,
+    today: { ...mockInput.today, totalFreeMinutes: 500 },
+    tasks: [
+      { id: 'split', name: 'Study', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 120, notes: null },
+    ],
+    currentTime: '13:00',
+    constraints: { noTaskBefore: '07:05', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test',
+    schedule: [
+      { id: 'split', name: 'Study', start: '10:00', end: '11:00', type: 'task', category: 'college', estimatedMinutes: 60, energyType: 'deep_focus', notes: null },
+      { id: 'split', name: 'Study', start: '14:00', end: '15:00', type: 'task', category: 'college', estimatedMinutes: 60, energyType: 'deep_focus', notes: null },
+    ],
+    overflow: [], warnings: [],
+  };
+  computeScore(result, input, 13 * 60);
+  computeStats(result, input, 13 * 60);
+  // requested = 120 (sum of blocks). tasksScheduled = 1 (distinct ids)
+  assert(result.stats.tasksScheduled === 1, `Score ex4: tasksScheduled=1 for split, got ${result.stats.tasksScheduled}`);
+}
+
+// usable=0, requested>0 → 150
+{
+  const input: AnalysisInput = {
+    ...mockInput,
+    today: { ...mockInput.today, totalFreeMinutes: 0 },
+    tasks: [{ id: 't', name: 'Task', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 60, notes: null }],
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [], warnings: [],
+  };
+  computeScore(result, input, 7 * 60 + 5);
+  assert(result.dayLoadPercent === 150, `Score: usable=0 → 150, got ${result.dayLoadPercent}`);
+}
+
+// requested=0 → 0
+{
+  const input: AnalysisInput = { ...mockInput, tasks: [] };
+  const result: AnalysisResult = {
+    dayLoadPercent: 99, dayLoadLabel: 'OVERLOADED',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [], warnings: [],
+  };
+  computeScore(result, input, 7 * 60 + 5);
+  assert(result.dayLoadPercent === 0, `Score: requested=0 → 0, got ${result.dayLoadPercent}`);
+}
+
+// Morning routine ahead: 20 min counted
+{
+  const input: AnalysisInput = {
+    ...mockInput,
+    today: { ...mockInput.today, totalFreeMinutes: 100, fixedBlocks: [] },
+    tasks: [{ id: 't', name: 'Task', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 60, notes: null }],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 0, dinnerDuration: 0, gymRecovery: 0 },
+    constraints: { noTaskBefore: '07:05', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [], warnings: [],
+  };
+  // nowMinutes = 06:45 (405), noTaskBefore = 07:05 (425), wake = 06:30 (390)
+  // morning dead zone = 425 - max(405, 390) = 20
+  computeScore(result, input, 6 * 60 + 45);
+  // usable = 100 - 20 = 80. 60/80 = 75 → TIGHT
+  assert(result.dayLoadPercent === 75, `Score: morning routine 20 min → 75%, got ${result.dayLoadPercent}`);
+  assert(result.dayLoadLabel === 'TIGHT', `Score: morning routine → TIGHT, got ${result.dayLoadLabel}`);
+}
+
+// ============================================================
+// FIXED BLOCKS C2
+// ============================================================
+console.log('\n--- Fixed blocks C2 ---');
+
+// Gym moved to another time is restored
+{
+  const gymInput: AnalysisInput = {
+    ...mockInput,
+    today: {
+      ...mockInput.today,
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'class' },
+        { id: 'gym-thu', name: 'Gym', start: '17:00', end: '18:15', type: 'gym' },
+      ],
+    },
+  };
+  const movedGym: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'gym-thu', name: 'Gym', start: '10:00', end: '11:15', type: 'gym', category: null, estimatedMinutes: 75, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '11:30', end: '13:00', type: 'task', category: 'college', estimatedMinutes: 90, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '14:00', end: '14:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const v = validateAnalysis(movedGym, gymInput);
+  const gymBlock = v.repaired.schedule.find(b => b.id === 'gym-thu');
+  assert(gymBlock?.start === '17:00', `C2: Moved gym restored to 17:00, got ${gymBlock?.start}`);
+  assert(gymBlock?.type === 'gym', `C2: Gym type preserved, got ${gymBlock?.type}`);
+}
+
+// Fake fixed block whose id matches user task is retyped to 'task'
+{
+  const fakeFixed: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '10:00', end: '11:30', type: 'fixed', category: 'college', estimatedMinutes: 90, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const v = validateAnalysis(fakeFixed, mockInput);
+  const retyped = v.repaired.schedule.find(b => b.id === 'task1');
+  assert(retyped?.type === 'task', `C2: Fake fixed retyped to task, got ${retyped?.type}`);
+}
+
+// Invented fixed block (unknown id) is deleted
+{
+  const inventedFixed: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      ...goodResult.schedule,
+      { id: 'invented-class', name: 'Fake Class', start: '15:00', end: '16:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+    ],
+  };
+  const v = validateAnalysis(inventedFixed, mockInput);
+  assert(!v.repaired.schedule.some(b => b.id === 'invented-class'), 'C2: Invented fixed block deleted');
+}
+
+// ============================================================
+// MEALS C3
+// ============================================================
+console.log('\n--- Meals C3 ---');
+
+// Task through lunch → OVERLAP violation, meal NOT deleted
+{
+  const mealOverlap: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '12:30', end: '14:00', type: 'task', category: 'college', estimatedMinutes: 90, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '15:00', end: '15:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+      { id: 'lunch', name: 'Lunch', start: '13:00', end: '13:30', type: 'meal', category: null, estimatedMinutes: 30, energyType: null, notes: null },
+    ],
+  };
+  const v = validateAnalysis(mealOverlap, mockInput);
+  assert(v.violations.some(v2 => v2.includes('OVERLAP') && v2.includes('meal')), 'C3: Meal overlap is OVERLAP violation');
+  assert(v.repaired.schedule.some(b => b.id === 'lunch'), 'C3: Meal block NOT deleted');
+}
+
+// ============================================================
+// DEEP FOCUS C4
+// ============================================================
+console.log('\n--- Deep focus C4 ---');
+
+// 45-min deep focus in 60-min stretch → violation
+{
+  const dfInput: AnalysisInput = {
+    ...mockInput,
+    today: {
+      ...mockInput.today,
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '11:00', end: '12:30', type: 'class' },
+      ],
+    },
+  };
+  const narrowStretch: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '11:00', end: '12:30', type: 'fixed', category: null, estimatedMinutes: 90, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '12:35', end: '13:20', type: 'task', category: 'college', estimatedMinutes: 45, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '15:00', end: '15:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+      { id: 'lunch', name: 'Lunch', start: '13:30', end: '14:00', type: 'meal', category: null, estimatedMinutes: 30, energyType: null, notes: null },
+    ],
+  };
+  const v = validateAnalysis(narrowStretch, dfInput);
+  assert(v.violations.some(v2 => v2.startsWith('DEEP_FOCUS_WINDOW:')), 'C4: 60-min stretch → DEEP_FOCUS_WINDOW');
+}
+
+// Same task in wide stretch → valid
+{
+  const dfInput: AnalysisInput = {
+    ...mockInput,
+    today: {
+      ...mockInput.today,
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '11:00', end: '12:30', type: 'class' },
+        { id: 'c2', name: 'Class2', start: '16:00', end: '17:30', type: 'class' },
+      ],
+    },
+  };
+  const wideStretch: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '11:00', end: '12:30', type: 'fixed', category: null, estimatedMinutes: 90, energyType: null, notes: null },
+      { id: 'c2', name: 'Class2', start: '16:00', end: '17:30', type: 'fixed', category: null, estimatedMinutes: 90, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '12:35', end: '13:20', type: 'task', category: 'college', estimatedMinutes: 45, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '15:00', end: '15:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const v = validateAnalysis(wideStretch, dfInput);
+  assert(!v.violations.some(v2 => v2.startsWith('DEEP_FOCUS_WINDOW:')), 'C4: 210-min stretch → no violation');
+}
+
+// Split deep-focus task → violation
+{
+  const splitDeep: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '10:00', end: '10:45', type: 'task', category: 'college', estimatedMinutes: 45, energyType: 'deep_focus', notes: null },
+      { id: 'task1', name: 'Study', start: '14:00', end: '14:45', type: 'task', category: 'college', estimatedMinutes: 45, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '15:00', end: '15:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const v = validateAnalysis(splitDeep, mockInput);
+  assert(v.violations.some(v2 => v2.includes('DEEP_FOCUS_WINDOW') && v2.includes('split')), 'C4: Split deep-focus → violation');
+}
+
+// ============================================================
+// TOO_SHORT C5
+// ============================================================
+console.log('\n--- Too short C5 ---');
+
+// Split 60+60 for 120 estimate → valid
+{
+  const splitValid: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '10:00', end: '11:00', type: 'task', category: 'college', estimatedMinutes: 60, energyType: 'deep_focus', notes: null },
+      { id: 'task1', name: 'Study', start: '14:00', end: '15:00', type: 'task', category: 'college', estimatedMinutes: 60, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const inputSplit: AnalysisInput = {
+    ...mockInput,
+    tasks: [
+      { id: 'task1', name: 'Study', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 120, notes: null },
+      { id: 'task2', name: 'Quick email', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 20, notes: null },
+    ],
+  };
+  const v = validateAnalysis(splitValid, inputSplit);
+  assert(!v.violations.some(v2 => v2.startsWith('TOO_SHORT:')), 'C5: Split 60+60=120 for est 120 → valid');
+}
+
+// 55 min for 100 estimate → violation (45 min below)
+{
+  const tooShortResult: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '10:00', end: '10:55', type: 'task', category: 'college', estimatedMinutes: 55, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const inputShort: AnalysisInput = {
+    ...mockInput,
+    tasks: [
+      { id: 'task1', name: 'Study', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 100, notes: null },
+      { id: 'task2', name: 'Quick email', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 20, notes: null },
+    ],
+  };
+  const v = validateAnalysis(tooShortResult, inputShort);
+  assert(v.violations.some(v2 => v2.startsWith('TOO_SHORT:')), 'C5: 55 min for 100 est → TOO_SHORT');
+}
+
+// 4 min below → valid (within 5 min tolerance)
+{
+  const almostResult: AnalysisResult = {
+    ...goodResult,
+    schedule: [
+      { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+      { id: 'task1', name: 'Study', start: '10:00', end: '11:26', type: 'task', category: 'college', estimatedMinutes: 86, energyType: 'deep_focus', notes: null },
+      { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+    ],
+  };
+  const v = validateAnalysis(almostResult, mockInput);
+  // task1: scheduled 86, estimate 90. 90-86=4 ≤ 5 → ok
+  assert(!v.violations.some(v2 => v2.startsWith('TOO_SHORT:')), 'C5: 4 min below est → valid (within 5 min tolerance)');
+}
+
+// ============================================================
+// FLOW C6 (lib/analyzeFlow.ts) — async, run via main()
+// ============================================================
+
+const flowNowMin = 7 * 60 + 5; // 07:05
+
+function makeFlowResult(schedule: any[], overflow: any[] = []): AnalysisResult {
+  return {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule, overflow, warnings: [],
+  };
+}
+
+const flowGoodSchedule = [
+  { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+  { id: 'task1', name: 'Study', start: '10:00', end: '11:30', type: 'task', category: 'college', estimatedMinutes: 90, energyType: 'deep_focus', notes: null },
+  { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+];
+
+const flowViolatingSchedule = [
+  { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: null },
+  { id: 'task1', name: 'Study', start: '08:30', end: '10:00', type: 'task', category: 'college', estimatedMinutes: 90, energyType: 'deep_focus', notes: null },
+  { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+];
+
+async function runFlowTests() {
+  console.log('\n--- Flow (analyzeFlow) ---');
+
+  // Flow test 1: Valid first answer → 1 call, plan returned
+  {
+    const calls: any[] = [];
+    const fakeCall: CallClaudeFn = async (msgs) => {
+      calls.push(msgs);
+      return { parsed: makeFlowResult(flowGoodSchedule), rawText: JSON.stringify(makeFlowResult(flowGoodSchedule)), stopReason: 'end_turn' };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === true, 'Flow: valid first → ok');
+    assert(calls.length === 1, `Flow: valid first → 1 call, got ${calls.length}`);
+    if (result.ok) {
+      assert(result.result.dayLoadPercent !== undefined, 'Flow: score applied');
+      assert(result.result.stats.tasksScheduled !== undefined, 'Flow: stats applied');
+    }
+  }
+
+  // Flow test 2: Violating first, valid second → 2 calls, conversation retry
+  {
+    const calls: any[] = [];
+    let callIdx = 0;
+    const fakeCall: CallClaudeFn = async (msgs) => {
+      calls.push(msgs);
+      const data = callIdx === 0 ? makeFlowResult(flowViolatingSchedule) : makeFlowResult(flowGoodSchedule);
+      callIdx++;
+      return { parsed: data, rawText: JSON.stringify(data), stopReason: 'end_turn' };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === true, 'Flow: retry fixes → ok');
+    assert(calls.length === 2, `Flow: retry → 2 calls, got ${calls.length}`);
+    assert(calls[1].length === 3, 'Flow: retry call has 3 messages (user, assistant, user)');
+    assert(calls[1][1].role === 'assistant', 'Flow: retry msg 2 is assistant');
+    assert(calls[1][2].content.includes('OVERLAP'), 'Flow: retry msg 3 contains violations');
+  }
+
+  // Flow test 3: Violating twice → invalid_plan
+  {
+    const fakeCall: CallClaudeFn = async () => {
+      return { parsed: makeFlowResult(flowViolatingSchedule), rawText: '{}', stopReason: 'end_turn' };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === false, 'Flow: violating twice → not ok');
+    if (!result.ok) {
+      assert(result.code === 'invalid_plan', `Flow: invalid_plan code, got ${result.code}`);
+    }
+  }
+
+  // Flow test 4: First call nothing, second valid → 2 calls, ok
+  {
+    const calls: any[] = [];
+    let callIdx = 0;
+    const fakeCall: CallClaudeFn = async (msgs) => {
+      calls.push(msgs);
+      callIdx++;
+      if (callIdx === 1) return { parsed: null, rawText: null, stopReason: null };
+      return { parsed: makeFlowResult(flowGoodSchedule), rawText: JSON.stringify(makeFlowResult(flowGoodSchedule)), stopReason: 'end_turn' };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === true, 'Flow: nothing then valid → ok');
+    assert(calls.length === 2, `Flow: nothing then valid → 2 calls, got ${calls.length}`);
+  }
+
+  // Flow test 5: Nothing twice → ai_unavailable
+  {
+    const fakeCall: CallClaudeFn = async () => {
+      return { parsed: null, rawText: null, stopReason: null };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === false, 'Flow: nothing twice → not ok');
+    if (!result.ok) {
+      assert(result.code === 'ai_unavailable', `Flow: ai_unavailable code, got ${result.code}`);
+    }
+  }
+
+  // Flow test 6: Nothing then violating → invalid_plan (used both calls)
+  {
+    let callIdx = 0;
+    const fakeCall: CallClaudeFn = async () => {
+      callIdx++;
+      if (callIdx === 1) return { parsed: null, rawText: null, stopReason: null };
+      return { parsed: makeFlowResult(flowViolatingSchedule), rawText: '{}', stopReason: 'end_turn' };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === false, 'Flow: nothing then violating → not ok');
+    if (!result.ok) {
+      assert(result.code === 'invalid_plan', `Flow: nothing→violating = invalid_plan, got ${result.code}`);
+    }
+  }
+
+  // Flow test 7: stop_reason max_tokens = nothing usable
+  {
+    const calls: any[] = [];
+    let callIdx = 0;
+    const fakeCall: CallClaudeFn = async (msgs) => {
+      calls.push(msgs);
+      callIdx++;
+      if (callIdx === 1) return { parsed: makeFlowResult(flowGoodSchedule), rawText: '{}', stopReason: 'max_tokens' };
+      return { parsed: makeFlowResult(flowGoodSchedule), rawText: JSON.stringify(makeFlowResult(flowGoodSchedule)), stopReason: 'end_turn' };
+    };
+    const result = await runAnalysisFlow(mockInput, flowNowMin, fakeCall, 'test');
+    assert(result.ok === true, 'Flow: max_tokens first, valid second → ok');
+    assert(calls.length === 2, `Flow: max_tokens treated as nothing → 2 calls, got ${calls.length}`);
+  }
+}
+
+// ============================================================
+// RUN ASYNC TESTS AND PRINT RESULTS
+// ============================================================
+runFlowTests().then(() => {
+  console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
+  process.exit(failed > 0 ? 1 : 0);
+}).catch(e => {
+  console.error('Flow tests crashed:', e);
+  process.exit(1);
+});

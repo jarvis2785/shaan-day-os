@@ -224,7 +224,7 @@ Rules:
 
 Rule 1 — Fixed blocks are immovable. Never reschedule, adjust, shorten, or suggest moving them. Build the entire schedule around them. They are constraints, not suggestions. This includes gym blocks — if gym appears in fixedBlocks, treat it exactly like a class. If gym is not in fixedBlocks for today, do not add it. The AI never places gym; the user's settings do.
 
-Rule 2 — Deep focus tasks require a minimum of 90 usable minutes in a window (after dead zones are applied). If no such window exists for a deep focus task, put it in overflow with reason: "[task name] needs 90+ min uninterrupted — no suitable window available today." Never squeeze a deep focus task into a 60-min window and call it done.
+Rule 2 — Deep focus tasks require a minimum of 90 usable minutes in a window (after dead zones are applied). If no such window exists for a deep focus task, put it in overflow with reason: "[task name] needs 90+ min uninterrupted — no suitable window available today." Never squeeze a deep focus task into a 60-min window and call it done. Deep-focus tasks must be a single block inside a stretch of at least 90 free minutes.
 
 Rule 3 — Pre-fixed-block buffer is 15 minutes maximum. If a gap before a fixed block is longer than 15 minutes and no task fills it, split it: schedule a task or free block first, then 15 min buffer immediately before the fixed block. Never label an entire 45- or 60-min gap as "transition buffer" when only 15 min of it is actually needed as a buffer.
 
