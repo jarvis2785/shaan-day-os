@@ -1,7 +1,7 @@
 import { getFreeMinutes, getRawFreeMinutes, getFreeWindows, getTodayBlocks, timeToMinutes, minutesToTime } from '../lib/schedule';
 import { validateAnalysis } from '../lib/validate';
 import { computeScore, computeStats } from '../lib/score';
-import { runAnalysisFlow, CallClaudeFn, ClaudeResponse } from '../lib/analyzeFlow';
+import { runAnalysisFlow, CallClaudeFn, ClaudeResponse, cleanUserFacingText } from '../lib/analyzeFlow';
 import { AnalysisResult, AnalysisInput, FixedBlock, UserSettings } from '../lib/types';
 import { DEFAULT_SETTINGS } from '../lib/constants';
 
@@ -891,6 +891,46 @@ console.log('\n--- Too short C5 ---');
 }
 
 // ============================================================
+// cleanUserFacingText (D2)
+// ============================================================
+console.log('\n--- cleanUserFacingText ---');
+
+// Each identifier replaced
+assert(cleanUserFacingText('currentTime is 22:52') === 'the current time is 22:52', 'clean: currentTime replaced');
+assert(cleanUserFacingText('noTaskBefore is 07:05') === 'the end of your morning routine is 07:05', 'clean: noTaskBefore replaced');
+assert(cleanUserFacingText('dayProfile is heavy') === 'day type is heavy', 'clean: dayProfile replaced');
+assert(cleanUserFacingText('fixedBlocks count is 4') === 'fixed blocks count is 4', 'clean: fixedBlocks replaced');
+assert(cleanUserFacingText('deadZoneSettings apply') === 'dead zone settings apply', 'clean: deadZoneSettings replaced');
+assert(cleanUserFacingText('totalFreeMinutes left') === 'free time left', 'clean: totalFreeMinutes replaced');
+assert(cleanUserFacingText('freeWindows available') === 'free windows available', 'clean: freeWindows replaced');
+
+// Case-insensitive
+assert(cleanUserFacingText('CurrentTime') === 'the current time', 'clean: case-insensitive (CurrentTime)');
+assert(cleanUserFacingText('CURRENTTIME') === 'the current time', 'clean: case-insensitive (CURRENTTIME)');
+assert(cleanUserFacingText('NoTaskBefore') === 'the end of your morning routine', 'clean: case-insensitive (NoTaskBefore)');
+
+// Whole-word: currentTimeline must NOT be replaced
+assert(cleanUserFacingText('currentTimeline is fine') === 'currentTimeline is fine', 'clean: whole-word (currentTimeline unchanged)');
+assert(cleanUserFacingText('noTaskBeforeClass') === 'noTaskBeforeClass', 'clean: whole-word (noTaskBeforeClass unchanged)');
+
+// Normal text unchanged
+assert(cleanUserFacingText('It is 22:52. You have 38 minutes until sleep.') === 'It is 22:52. You have 38 minutes until sleep.', 'clean: normal text unchanged');
+
+// Empty string safe
+assert(cleanUserFacingText('') === '', 'clean: empty string safe');
+
+// Backwards-compat: result with non-empty warnings still validates
+{
+  const oldPlanResult: AnalysisResult = {
+    ...goodResult,
+    warnings: ['currentTime is 22:52 — only 38 minutes remain', 'Heavy day profile correctly identified'],
+  };
+  const v = validateAnalysis(oldPlanResult, mockInput);
+  assert(v.repaired.warnings.length === 2, 'Backwards-compat: warnings array preserved through validation');
+  assert(v.repaired.warnings[0].includes('currentTime'), 'Backwards-compat: warning text unchanged by validation');
+}
+
+// ============================================================
 // FLOW C6 (lib/analyzeFlow.ts) — async, run via main()
 // ============================================================
 
@@ -1004,6 +1044,51 @@ async function runFlowTests() {
     assert(result.ok === false, 'Flow: nothing then violating → not ok');
     if (!result.ok) {
       assert(result.code === 'invalid_plan', `Flow: nothing→violating = invalid_plan, got ${result.code}`);
+    }
+  }
+
+  // Flow test 8: identifiers in fake Claude answer are cleaned from returned text
+  {
+    const dirtyResult: AnalysisResult = {
+      ...makeFlowResult(flowGoodSchedule),
+      mentorAssessment: 'currentTime is 22:52 and noTaskBefore is 07:05. Day is heavy based on dayProfile.',
+      overflow: [
+        { id: 'task1', name: 'Study', reason: 'No fit given currentTime and fixedBlocks', suggestedDay: null },
+      ],
+      schedule: [
+        { id: 'c1', name: 'Class', start: '08:00', end: '09:00', type: 'fixed', category: null, estimatedMinutes: 60, energyType: null, notes: 'deadZoneSettings apply after' },
+        { id: 'task2', name: 'Quick email', start: '12:00', end: '12:20', type: 'task', category: 'personal', estimatedMinutes: 20, energyType: 'low_energy_ok', notes: null },
+      ],
+      warnings: [],
+    };
+    const flowInputWithDirty: AnalysisInput = {
+      ...mockInput,
+      tasks: [
+        { id: 'task1', name: 'Study', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 90, notes: null },
+        { id: 'task2', name: 'Quick email', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 20, notes: null },
+      ],
+    };
+    const fakeCall: CallClaudeFn = async () => ({
+      parsed: dirtyResult,
+      rawText: JSON.stringify(dirtyResult),
+      stopReason: 'end_turn',
+    });
+    const result = await runAnalysisFlow(flowInputWithDirty, flowNowMin, fakeCall, 'test');
+    assert(result.ok === true, 'Flow clean: valid result returned');
+    if (result.ok) {
+      assert(!result.result.mentorAssessment.includes('currentTime'), 'Flow clean: mentorAssessment no currentTime');
+      assert(!result.result.mentorAssessment.includes('noTaskBefore'), 'Flow clean: mentorAssessment no noTaskBefore');
+      assert(!result.result.mentorAssessment.includes('dayProfile'), 'Flow clean: mentorAssessment no dayProfile');
+      const overflow = result.result.overflow;
+      assert(!overflow.some(o => o.reason.includes('currentTime')), 'Flow clean: overflow reason no currentTime');
+      assert(!overflow.some(o => o.reason.includes('fixedBlocks')), 'Flow clean: overflow reason no fixedBlocks');
+      const classBlock = result.result.schedule.find(b => b.id === 'c1');
+      assert(classBlock !== undefined, 'Flow clean: class block present');
+      assert(classBlock!.start === '08:00', 'Flow clean: block start unchanged');
+      assert(classBlock!.end === '09:00', 'Flow clean: block end unchanged');
+      assert(classBlock!.type === 'fixed', 'Flow clean: block type unchanged');
+      assert(classBlock!.id === 'c1', 'Flow clean: block id unchanged');
+      assert(!classBlock!.notes?.includes('deadZoneSettings'), 'Flow clean: block notes no deadZoneSettings');
     }
   }
 

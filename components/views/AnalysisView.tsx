@@ -136,24 +136,6 @@ export default function AnalysisView({
         </div>
       )}
 
-      {analysis.warnings.length > 0 && (
-        <div className="space-y-2">
-          {analysis.warnings.map((w, i) => (
-            <div
-              key={i}
-              className="text-[13px] rounded-btn px-3.5 py-2.5"
-              style={{
-                backgroundColor: 'rgba(255, 214, 10, 0.06)',
-                border: '1px solid rgba(255, 214, 10, 0.15)',
-                color: '#FFD60A',
-              }}
-            >
-              {w}
-            </div>
-          ))}
-        </div>
-      )}
-
       <motion.div
         className="flex gap-3 pt-2"
         initial={{ opacity: 0, y: 16 }}

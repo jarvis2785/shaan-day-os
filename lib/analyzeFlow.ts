@@ -22,6 +22,25 @@ export type FlowResult = {
   violations?: string[];
 };
 
+const IDENTIFIER_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bcurrentTime\b/gi, 'the current time'],
+  [/\bnoTaskBefore\b/gi, 'the end of your morning routine'],
+  [/\bdayProfile\b/gi, 'day type'],
+  [/\bfixedBlocks\b/gi, 'fixed blocks'],
+  [/\bdeadZoneSettings\b/gi, 'dead zone settings'],
+  [/\btotalFreeMinutes\b/gi, 'free time'],
+  [/\bfreeWindows\b/gi, 'free windows'],
+];
+
+export function cleanUserFacingText(text: string): string {
+  if (!text) return text;
+  let result = text;
+  for (const [pattern, replacement] of IDENTIFIER_REPLACEMENTS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 const ERROR_MESSAGES: Record<string, { message: string; status: number }> = {
   ai_unavailable: { message: "The AI brain didn't respond. Try again.", status: 502 },
   invalid_plan: { message: "The AI couldn't build a plan that respects your schedule rules. Try again — nothing was saved.", status: 422 },
@@ -95,6 +114,21 @@ export async function runAnalysisFlow(
       input.user.wakeTime,
       input.user.sleepTime,
     );
+  }
+
+  if (finalResult.mentorAssessment) {
+    finalResult.mentorAssessment = cleanUserFacingText(finalResult.mentorAssessment);
+  }
+  if (finalResult.overflow) {
+    for (const item of finalResult.overflow) {
+      item.reason = cleanUserFacingText(item.reason);
+    }
+  }
+  if (finalResult.schedule) {
+    for (const block of finalResult.schedule) {
+      if (block.name) block.name = cleanUserFacingText(block.name);
+      if (block.notes) block.notes = cleanUserFacingText(block.notes);
+    }
   }
 
   return { ok: true, result: finalResult };
