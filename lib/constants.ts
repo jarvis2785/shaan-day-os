@@ -66,6 +66,7 @@ export const DEFAULT_DEAD_ZONES: DeadZoneSettings = {
   gymRecovery: 45,
 };
 
+// Owner's original timetable
 export const DEFAULT_SETTINGS: UserSettings = {
   wakeTime: '06:30',
   sleepTime: '23:30',
@@ -73,6 +74,28 @@ export const DEFAULT_SETTINGS: UserSettings = {
   schedule: DEFAULT_SCHEDULE,
   deadZones: DEFAULT_DEAD_ZONES,
   dayTypes: DEFAULT_DAY_TYPES,
+};
+
+export const EMPTY_SETTINGS: UserSettings = {
+  wakeTime: '07:00',
+  sleepTime: '23:00',
+  gym: {
+    enabled: false,
+    durationMinutes: 75,
+    sessions: {
+      monday: null, tuesday: null, wednesday: null, thursday: null,
+      friday: null, saturday: null, sunday: null,
+    },
+  },
+  schedule: {
+    monday: [], tuesday: [], wednesday: [], thursday: [],
+    friday: [], saturday: [], sunday: [],
+  },
+  deadZones: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 45 },
+  dayTypes: {
+    monday: 'moderate', tuesday: 'moderate', wednesday: 'moderate', thursday: 'moderate',
+    friday: 'moderate', saturday: 'moderate', sunday: 'moderate',
+  },
 };
 
 export const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;

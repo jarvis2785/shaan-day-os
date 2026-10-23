@@ -11,10 +11,10 @@ import {
   getDeferredTasks,
   clearDeferredTasks,
   deferTask,
-  initialize,
   getPlannedTasks,
   clearPlannedTasks,
 } from '@/lib/storage';
+import { useApp } from '@/components/providers/AppProvider';
 import {
   formatDate,
   getDateString,
@@ -31,6 +31,7 @@ import ExecutionView from '@/components/views/ExecutionView';
 
 export default function TodayPage() {
   const router = useRouter();
+  const { ready } = useApp();
   const [state, setState] = useState<DayState>('input');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -76,12 +77,12 @@ export default function TodayPage() {
   }, []);
 
   useEffect(() => {
-    initialize();
+    if (!ready) return;
     const dateStr = getDateString();
     currentDateRef.current = dateStr;
     loadDayState(dateStr);
     setMounted(true);
-  }, [loadDayState]);
+  }, [ready, loadDayState]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -119,6 +120,7 @@ export default function TodayPage() {
     try {
       const res = await analyzeDay(input);
       if (!res.ok) {
+        if (res.status === 401) { router.push('/login'); return; }
         const data = await res.json().catch(() => null);
         throw new Error(data?.message || data?.error || 'Analysis failed');
       }
@@ -136,7 +138,7 @@ export default function TodayPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't reach the brain. Check connection.");
     }
-  }, []);
+  }, [router]);
 
   const handleAnalyze = async () => {
     setLoading(true);

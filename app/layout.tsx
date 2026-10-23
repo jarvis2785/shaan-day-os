@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import BottomNav from '@/components/ui/BottomNav';
 import ServiceWorkerRegistrar from '@/components/ui/ServiceWorkerRegistrar';
+import { AppProvider } from '@/components/providers/AppProvider';
 
 export const metadata: Metadata = {
   title: 'DayOS',
@@ -36,11 +37,13 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-apple-touch.png" />
       </head>
       <body className="bg-bg text-text-primary">
-        <main className="max-w-app mx-auto px-5 pt-14 pb-4 min-h-screen">
-          {children}
-        </main>
-        <BottomNav />
-        <ServiceWorkerRegistrar />
+        <AppProvider>
+          <main className="max-w-app mx-auto px-5 pt-14 pb-4 min-h-screen">
+            {children}
+          </main>
+          <BottomNav />
+          <ServiceWorkerRegistrar />
+        </AppProvider>
       </body>
     </html>
   );

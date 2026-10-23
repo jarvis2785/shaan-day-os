@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SYSTEM_PROMPT } from '@/lib/constants';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { timeToMinutes } from '@/lib/schedule';
 import { runAnalysisFlow, ClaudeResponse, CallClaudeFn } from '@/lib/analyzeFlow';
+import { consumeAiCall } from '@/lib/aiLimit';
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized', message: 'Sign in to use analysis.' }, { status: 401 });
+    }
+
     const { input } = await req.json();
 
     if (!input || !input.tasks || !input.today) {
       return NextResponse.json({ error: 'bad_request', message: 'Invalid input' }, { status: 400 });
+    }
+
+    const limit = await consumeAiCall(supabase, 'analyze');
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: 'rate_limited', message: limit.message },
+        { status: limit.status }
+      );
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;

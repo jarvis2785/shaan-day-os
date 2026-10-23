@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Task } from '@/lib/types';
 import { getSettings, savePlannedTasks, generateId } from '@/lib/storage';
+import { useApp } from '@/components/providers/AppProvider';
 import {
   getISTTomorrow,
   getTodayBlocks,
@@ -25,6 +26,7 @@ function getFreeTimeColor(minutes: number): string {
 
 export default function PlanTomorrowPage() {
   const router = useRouter();
+  const { ready } = useApp();
   const [mounted, setMounted] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -46,7 +48,7 @@ export default function PlanTomorrowPage() {
 
   const tomorrowDayName = getDayName(tomorrow);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { if (ready) setMounted(true); }, [ready]);
 
   const handleAddTask = () => { setEditTask(null); setSheetOpen(true); };
   const handleEditTask = (task: Task) => { setEditTask(task); setSheetOpen(true); };

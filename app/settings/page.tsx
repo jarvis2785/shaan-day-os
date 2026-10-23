@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserSettings, FixedBlock, DeadZoneSettings, DayProfile } from '@/lib/types';
-import { getSettings, saveSettings, initialize, generateId } from '@/lib/storage';
+import { getSettings, saveSettings, generateId } from '@/lib/storage';
+import { useApp } from '@/components/providers/AppProvider';
 import { DAY_NAMES, DAY_FULL_LABELS, DEFAULT_DEAD_ZONES, DEFAULT_DAY_TYPES } from '@/lib/constants';
 import Toast from '@/components/ui/Toast';
 
@@ -12,12 +13,15 @@ export default function SettingsPage() {
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { email, displayName, signOut, ready } = useApp();
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
 
   useEffect(() => {
-    initialize();
+    if (!ready) return;
     setSettings(getSettings());
     setMounted(true);
-  }, []);
+  }, [ready]);
 
   const save = useCallback(
     (updated: UserSettings) => {
@@ -27,6 +31,15 @@ export default function SettingsPage() {
     },
     []
   );
+
+  const handleSaveName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { getSupabaseBrowserClient } = await import('@/lib/supabase/client');
+      await getSupabaseBrowserClient().auth.updateUser({ data: { display_name: nameValue } });
+      setEditingName(false);
+    } catch {}
+  };
 
   if (!mounted || !settings) {
     return (
@@ -115,6 +128,37 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-8">
+        <section>
+          <div className="text-[11px] font-semibold tracking-[0.15em] uppercase mb-3" style={{ color: '#48484A' }}>
+            ACCOUNT
+          </div>
+          <div className="rounded-card overflow-hidden divide-y" style={{ borderColor: '#2C2C2E' }}>
+            <SettingsRow label="Email">
+              <span className="text-[15px] truncate max-w-[200px]" style={{ color: '#FFFFFF' }}>{email}</span>
+            </SettingsRow>
+            <SettingsRow label="Display name">
+              {editingName ? (
+                <form onSubmit={handleSaveName} className="flex items-center gap-2">
+                  <input type="text" value={nameValue} onChange={e => setNameValue(e.target.value)}
+                    className="rounded-btn px-3 py-1.5 text-[15px] focus:outline-none w-[140px]"
+                    style={{ backgroundColor: '#111111', color: '#FFFFFF', border: '1px solid #2C2C2E' }} />
+                  <button type="submit" className="text-[13px] font-semibold" style={{ color: '#30D158' }}>Save</button>
+                </form>
+              ) : (
+                <button onClick={() => { setNameValue(displayName); setEditingName(true); }}
+                  className="text-[15px]" style={{ color: '#FFFFFF' }}>
+                  {displayName || 'Set name'}
+                </button>
+              )}
+            </SettingsRow>
+            <div className="p-4" style={{ backgroundColor: '#1C1C1E' }}>
+              <button onClick={signOut} className="text-[15px] font-medium" style={{ color: '#FF453A' }}>
+                Sign out
+              </button>
+            </div>
+          </div>
+        </section>
+
         <section>
           <div className="text-[11px] font-semibold tracking-[0.15em] uppercase mb-3" style={{ color: '#48484A' }}>
             DAILY RHYTHM

@@ -35,6 +35,7 @@ export function buildAnalysisInput(
 
   return {
     user: {
+      // TODO Step 3: use the account's display name and profile
       name: 'Shaan',
       wakeTime: settings.wakeTime,
       sleepTime: settings.sleepTime,

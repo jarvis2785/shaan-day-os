@@ -1,5 +1,5 @@
-const CACHE_NAME = 'dayos-v1';
-const PRECACHE_URLS = ['/', '/week', '/settings'];
+const CACHE_NAME = 'dayos-v3';
+const PRECACHE_URLS = ['/login'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,14 +24,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (event.request.url.includes('/api/')) return;
+  if (event.request.url.includes('supabase.co')) return;
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, clone);
-        });
+        if (response.ok && !response.redirected && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clone);
+          });
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

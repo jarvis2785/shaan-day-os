@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { DayPlan } from '@/lib/types';
-import { getSettings, getDayPlan, initialize } from '@/lib/storage';
+import { getSettings, getDayPlan } from '@/lib/storage';
+import { useApp } from '@/components/providers/AppProvider';
 import { DAY_NAMES, DAY_LABELS } from '@/lib/constants';
 import {
   getTotalFixedMinutes,
@@ -36,6 +37,7 @@ function getMiniRingColor(percent: number): string {
 }
 
 export default function WeekPage() {
+  const { ready } = useApp();
   const [mounted, setMounted] = useState(false);
   const [settings, setSettingsState] = useState<UserSettings | null>(null);
   const [weekData, setWeekData] = useState<
@@ -52,7 +54,7 @@ export default function WeekPage() {
   const router = useRouter();
 
   useEffect(() => {
-    initialize();
+    if (!ready) return;
     const settings = getSettings();
     setSettingsState(settings);
     const todayDayName = getDayName();
@@ -86,7 +88,7 @@ export default function WeekPage() {
 
     setWeekData(data);
     setMounted(true);
-  }, []);
+  }, [ready]);
 
   if (!mounted) {
     return (

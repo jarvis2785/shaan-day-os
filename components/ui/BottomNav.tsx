@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { isAuthRoute } from '@/lib/auth';
 
 const tabs = [
   {
@@ -41,6 +42,8 @@ const tabs = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+
+  if (isAuthRoute(pathname)) return null;
 
   return (
     <nav

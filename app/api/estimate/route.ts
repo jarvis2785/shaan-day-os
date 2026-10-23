@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { consumeAiCall } from '@/lib/aiLimit';
 
 const ESTIMATE_SYSTEM_PROMPT = `You are a productivity advisor. Given a task name, category, and user's time estimate, evaluate if the estimate is realistic.
 
@@ -26,9 +28,20 @@ Return raw JSON only. No preamble. No backticks.`;
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized', message: 'Sign in first.' }, { status: 401 });
+    }
+
     const { taskName, category, estimatedMinutes } = await req.json();
 
     if (!taskName || !category || !estimatedMinutes) {
+      return NextResponse.json({ isRealistic: true, warning: null, suggestedMinutes: null });
+    }
+
+    const limit = await consumeAiCall(supabase, 'estimate');
+    if (!limit.allowed) {
       return NextResponse.json({ isRealistic: true, warning: null, suggestedMinutes: null });
     }
 
