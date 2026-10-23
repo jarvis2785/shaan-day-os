@@ -7,8 +7,8 @@ import { DEFAULT_SETTINGS, EMPTY_SETTINGS } from '../lib/constants';
 import { sanitizeRedirectPath, decideRoute } from '../lib/auth';
 import { normalizeSettings } from '../lib/normalizeSettings';
 import { consumeAiCall } from '../lib/aiLimit';
-import { shouldRehydrate } from '../lib/supabase/dataCache';
-import { legacyKeysToRemove } from '../lib/storage';
+import { shouldRehydrate, getHydrateCount, hasPendingWrites, getRetryDelay, updateCachedSettings, getCachedSettings, clear as clearCache, hydrate, cacheSettings } from '../lib/supabase/dataCache';
+import { legacyKeysToRemove, updateSettings } from '../lib/storage';
 
 let passed = 0;
 let failed = 0;
@@ -1391,11 +1391,354 @@ console.log('\n--- legacyKeysToRemove ---');
 }
 
 // ============================================================
+// D1: updateSettings (lib/storage.ts)
+// ============================================================
+console.log('\n--- D1: updateSettings ---');
+
+// E2.3: Empty cache — updater receives normalized empty defaults
+{
+  clearCache();
+  const emptyDefaults = normalizeSettings(EMPTY_SETTINGS);
+  let received: UserSettings | null = null;
+  updateCachedSettings(s => { received = s; return s; });
+  assert(received !== null, 'E2.3: updater was called');
+  assert(received!.wakeTime === emptyDefaults.wakeTime, 'E2.3: wakeTime matches empty defaults');
+  assert(received!.sleepTime === emptyDefaults.sleepTime, 'E2.3: sleepTime matches empty defaults');
+  assert(received!.gym.enabled === emptyDefaults.gym.enabled, 'E2.3: gym.enabled matches empty defaults');
+}
+
+// E2.4: Not hydrated — returns updated object but cache unchanged
+{
+  clearCache();
+  const result = updateCachedSettings(s => ({ ...s, wakeTime: '05:00' }));
+  assert(result.wakeTime === '05:00', 'E2.4: returned object has updated wakeTime');
+  assert(getCachedSettings() === null, 'E2.4: cache still null (cacheSettings guard held)');
+}
+
+// ============================================================
+// D2: getHydrateCount and hasPendingWrites
+// ============================================================
+// D2 tests require async hydration — see runDataCacheTests below
+
+// ============================================================
+// D3: Correct usable time (score.ts)
+// ============================================================
+console.log('\n--- D3: Correct usable time ---');
+
+// D3.1: Friday scenario — classes 08-17, gym 17-18:15, fixed Dinner 20:00-20:20
+{
+  const input: AnalysisInput = {
+    user: { name: 'Test', wakeTime: '07:00', sleepTime: '23:00', totalWakingHours: 16 },
+    today: {
+      date: '2026-10-23', dayName: 'Friday', dayProfile: 'heavy',
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '08:00', end: '17:00', type: 'class' },
+        { id: 'gym', name: 'Gym', start: '17:00', end: '18:15', type: 'gym' },
+        { id: 'dinner', name: 'Dinner', start: '20:00', end: '20:20', type: 'custom' },
+      ],
+      totalFixedMinutes: 540 + 75 + 20,
+      totalFreeMinutes: 265,
+      freeWindows: [
+        { start: '18:15', end: '20:00', durationMinutes: 105, quality: 'low' as const },
+        { start: '20:20', end: '23:00', durationMinutes: 160, quality: 'low' as const },
+      ],
+    },
+    tasks: [
+      { id: 't1', name: 'Essay', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 90, notes: null },
+    ],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 45 },
+    currentTime: '10:14',
+    constraints: { noTaskBefore: '07:35', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [
+      { id: 't1', name: 'Essay', reason: 'no time', suggestedDay: null },
+    ], warnings: [],
+  };
+  computeScore(result, input, 10 * 60 + 14);
+  computeStats(result, input, 10 * 60 + 14);
+  // gym recovery: 45 (from 18:15-19:00 in free window), lunch: 0 (inside classes), dinner: 0 (fixed Dinner block)
+  // usable = 265 - 45 = 220. 90/220 = 40.9 → 41%
+  assert(result.dayLoadPercent === 41, `D3.1: Friday load 41%, got ${result.dayLoadPercent}`);
+  assert(result.dayLoadLabel === 'CLEAR', `D3.1: Friday label CLEAR, got ${result.dayLoadLabel}`);
+  assert(result.stats.usableTimeAfterDeadZones === '3.7 hrs', `D3.1: usable 3.7 hrs, got ${result.stats.usableTimeAfterDeadZones}`);
+}
+
+// D3.2: Same day without the Dinner block name match → dinner deducts 30 → usable 190
+{
+  const input: AnalysisInput = {
+    user: { name: 'Test', wakeTime: '07:00', sleepTime: '23:00', totalWakingHours: 16 },
+    today: {
+      date: '2026-10-23', dayName: 'Friday', dayProfile: 'heavy',
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '08:00', end: '17:00', type: 'class' },
+        { id: 'gym', name: 'Gym', start: '17:00', end: '18:15', type: 'gym' },
+        { id: 'brk', name: 'Break', start: '20:00', end: '20:20', type: 'custom' },
+      ],
+      totalFixedMinutes: 540 + 75 + 20,
+      totalFreeMinutes: 265,
+      freeWindows: [
+        { start: '18:15', end: '20:00', durationMinutes: 105, quality: 'low' as const },
+        { start: '20:20', end: '23:00', durationMinutes: 160, quality: 'low' as const },
+      ],
+    },
+    tasks: [
+      { id: 't1', name: 'Essay', category: 'college', deadline: 'today', priority: 'high', estimatedMinutes: 90, notes: null },
+    ],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 45 },
+    currentTime: '10:14',
+    constraints: { noTaskBefore: '07:35', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [
+      { id: 't1', name: 'Essay', reason: 'no time', suggestedDay: null },
+    ], warnings: [],
+  };
+  computeScore(result, input, 10 * 60 + 14);
+  // gym 45 + dinner 30 = 75. usable = 265 - 75 = 190. 90/190 = 47.4 → 47
+  assert(result.dayLoadPercent === 47, `D3.2: no Dinner block → 47%, got ${result.dayLoadPercent}`);
+}
+
+// D3.3: No classes, free all day at 07:10 → morning 25, lunch 30, dinner 30
+{
+  const input: AnalysisInput = {
+    user: { name: 'Test', wakeTime: '07:00', sleepTime: '23:00', totalWakingHours: 16 },
+    today: {
+      date: '2026-10-23', dayName: 'Friday', dayProfile: 'free',
+      fixedBlocks: [],
+      totalFixedMinutes: 0,
+      totalFreeMinutes: 950,
+      freeWindows: [
+        { start: '07:10', end: '23:00', durationMinutes: 950, quality: 'prime' as const },
+      ],
+    },
+    tasks: [
+      { id: 't1', name: 'Work', category: 'agency_client', deadline: 'today', priority: 'high', estimatedMinutes: 120, notes: null },
+    ],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 45 },
+    currentTime: '07:10',
+    constraints: { noTaskBefore: '07:35', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [
+      { id: 't1', name: 'Work', reason: 'no time', suggestedDay: null },
+    ], warnings: [],
+  };
+  computeScore(result, input, 7 * 60 + 10);
+  // morning [07:10, 07:35] = 25 min. lunch 30. dinner 30. total = 85.
+  // usable = 950 - 85 = 865. 120/865 = 13.9 → 14
+  assert(result.dayLoadPercent === 14, `D3.3: no classes → 14%, got ${result.dayLoadPercent}`);
+}
+
+// D3.4: Dead zone fully inside a fixed block → deducts 0
+{
+  const input: AnalysisInput = {
+    user: { name: 'Test', wakeTime: '07:00', sleepTime: '23:00', totalWakingHours: 16 },
+    today: {
+      date: '2026-10-23', dayName: 'Friday', dayProfile: 'heavy',
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '08:00', end: '17:00', type: 'class' },
+      ],
+      totalFixedMinutes: 540,
+      totalFreeMinutes: 360,
+      freeWindows: [
+        { start: '17:00', end: '23:00', durationMinutes: 360, quality: 'low' as const },
+      ],
+    },
+    tasks: [
+      { id: 't1', name: 'Work', category: 'agency_client', deadline: 'today', priority: 'high', estimatedMinutes: 120, notes: null },
+    ],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 0 },
+    currentTime: '10:00',
+    constraints: { noTaskBefore: '07:35', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [
+      { id: 't1', name: 'Work', reason: 'no time', suggestedDay: null },
+    ], warnings: [],
+  };
+  computeScore(result, input, 10 * 60);
+  // morning [10:00, 07:35] → start>end → 0
+  // lunch [12:00, 15:00] → inside classes, not in free window → 0
+  // dinner [19:00, 22:00] → inside free window [17:00-23:00]. Take 30.
+  // usable = 360 - 30 = 330. 120/330 = 36.4 → 36
+  assert(result.dayLoadPercent === 36, `D3.4: lunch inside class → 36%, got ${result.dayLoadPercent}`);
+}
+
+// D3.5: Usable never negative
+{
+  const input: AnalysisInput = {
+    user: { name: 'Test', wakeTime: '07:00', sleepTime: '23:00', totalWakingHours: 16 },
+    today: {
+      date: '2026-10-23', dayName: 'Friday', dayProfile: 'heavy',
+      fixedBlocks: [
+        { id: 'c1', name: 'Class', start: '07:00', end: '22:30', type: 'class' },
+      ],
+      totalFixedMinutes: 930,
+      totalFreeMinutes: 30,
+      freeWindows: [
+        { start: '22:30', end: '23:00', durationMinutes: 30, quality: 'low' as const },
+      ],
+    },
+    tasks: [
+      { id: 't1', name: 'Task', category: 'personal', deadline: 'today', priority: 'low', estimatedMinutes: 60, notes: null },
+    ],
+    deadZoneSettings: { morningRoutine: 35, lunchDuration: 30, dinnerDuration: 30, gymRecovery: 45 },
+    currentTime: '07:30',
+    constraints: { noTaskBefore: '07:35', reason: 'Morning routine' },
+  };
+  const result: AnalysisResult = {
+    dayLoadPercent: 0, dayLoadLabel: 'CLEAR',
+    stats: { freeTimeAvailable: '0', totalTasksRequested: 0, estimatedTaskTime: '0', tasksScheduled: 0, tasksOverflow: 0 },
+    mentorAssessment: 'test', schedule: [], overflow: [], warnings: [],
+  };
+  computeScore(result, input, 7 * 60 + 30);
+  // All dead zones miss the tiny 22:30-23:00 window. Usable = 30 - 0 = 30.
+  assert(result.dayLoadPercent >= 0, `D3.5: usable never negative, pct=${result.dayLoadPercent}`);
+}
+
+// ============================================================
+// D4: getRetryDelay (backoff helper)
+// ============================================================
+console.log('\n--- D4: getRetryDelay ---');
+
+assert(getRetryDelay(0) === 5000, `D4: attempt 0 → 5000, got ${getRetryDelay(0)}`);
+assert(getRetryDelay(1) === 15000, `D4: attempt 1 → 15000, got ${getRetryDelay(1)}`);
+assert(getRetryDelay(2) === 60000, `D4: attempt 2 → 60000, got ${getRetryDelay(2)}`);
+assert(getRetryDelay(3) === 60000, `D4: attempt 3 → 60000, got ${getRetryDelay(3)}`);
+assert(getRetryDelay(10) === 60000, `D4: attempt 10 → 60000, got ${getRetryDelay(10)}`);
+
+// ============================================================
+// E2.1–E2.2 + E3: DATA CACHE TESTS (async — need hydrate)
+// ============================================================
+async function runDataCacheTests() {
+  function fakeSupabase(profileSettings: any = null) {
+    return {
+      from: (table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () => Promise.resolve({
+                  data: profileSettings ? { settings: profileSettings, display_name: 'Test' } : null,
+                  error: null,
+                }),
+              }),
+            }),
+            upsert: () => Promise.resolve({ error: null }),
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              gte: () => Promise.resolve({ data: [], error: null }),
+            }),
+          }),
+          upsert: () => Promise.resolve({ error: null }),
+          delete: () => ({ match: () => Promise.resolve({ error: null }) }),
+        };
+      },
+    };
+  }
+
+  console.log('\n--- E2.1–E2.2: updateCachedSettings (hydrated) ---');
+
+  // E2.1: Hydrate, then change only wakeTime — other fields unchanged
+  {
+    clearCache();
+    const settingsA = { ...normalizeSettings(EMPTY_SETTINGS), wakeTime: '07:00', sleepTime: '23:30' };
+    await hydrate('test-e2', fakeSupabase(settingsA));
+    const result = updateCachedSettings(s => ({ ...s, wakeTime: '06:30' }));
+    assert(result.wakeTime === '06:30', 'E2.1: wakeTime changed to 06:30');
+    assert(result.sleepTime === '23:30', 'E2.1: sleepTime unchanged');
+    assert(result.gym.enabled === settingsA.gym.enabled, 'E2.1: gym.enabled unchanged');
+    assert(getCachedSettings()?.wakeTime === '06:30', 'E2.1: cache updated');
+    clearCache();
+  }
+
+  // E2.2: Two calls in a row — both changes persist
+  {
+    clearCache();
+    await hydrate('test-e2b', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    updateCachedSettings(s => ({ ...s, gym: { ...s.gym, durationMinutes: 60 } }));
+    updateCachedSettings(s => ({ ...s, sleepTime: '22:00' }));
+    const cached = getCachedSettings();
+    assert(cached?.gym.durationMinutes === 60, 'E2.2: first change (gym duration) stuck');
+    assert(cached?.sleepTime === '22:00', 'E2.2: second change (sleepTime) stuck');
+    clearCache();
+  }
+
+  console.log('\n--- E3: hydrate + hasPendingWrites ---');
+
+  // E3.1: hydrateCount increases by exactly 1
+  {
+    clearCache();
+    const before = getHydrateCount();
+    await hydrate('test-e3-1', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    assert(getHydrateCount() === before + 1, 'E3.1: hydrateCount +1 after hydrate');
+    clearCache();
+  }
+
+  // E3.2: C1 guard — same user while write pending, counter unchanged
+  {
+    clearCache();
+    await hydrate('test-e3-2', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    const countAfterHydrate = getHydrateCount();
+    cacheSettings({ ...normalizeSettings(EMPTY_SETTINGS), wakeTime: '05:00' });
+    assert(hasPendingWrites() === true, 'E3.2: hasPendingWrites true after cacheSettings');
+    await hydrate('test-e3-2', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    assert(getHydrateCount() === countAfterHydrate, 'E3.2: hydrateCount unchanged (C1 guard)');
+    assert(getCachedSettings()?.wakeTime === '05:00', 'E3.2: cached data unchanged by guarded hydrate');
+    clearCache();
+  }
+
+  // E3.3: Different user increases counter
+  {
+    clearCache();
+    await hydrate('user-a', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    const countA = getHydrateCount();
+    await hydrate('user-b', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    assert(getHydrateCount() === countA + 1, 'E3.3: hydrateCount +1 for different user');
+    clearCache();
+  }
+
+  // E3.4: hasPendingWrites state transitions
+  {
+    clearCache();
+    assert(hasPendingWrites() === false, 'E3.4: false on clean cache');
+    await hydrate('test-e3-4', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    assert(hasPendingWrites() === false, 'E3.4: false after fresh hydrate');
+    cacheSettings({ ...normalizeSettings(EMPTY_SETTINGS), wakeTime: '06:00' });
+    assert(hasPendingWrites() === true, 'E3.4: true after cacheSettings');
+    clearCache();
+  }
+
+  // E3.5: After clear(), hasPendingWrites is false
+  {
+    clearCache();
+    await hydrate('test-e3-5', fakeSupabase(normalizeSettings(EMPTY_SETTINGS)));
+    cacheSettings({ ...normalizeSettings(EMPTY_SETTINGS), wakeTime: '06:00' });
+    assert(hasPendingWrites() === true, 'E3.5: pending before clear');
+    clearCache();
+    assert(hasPendingWrites() === false, 'E3.5: false after clear()');
+  }
+}
+
+// ============================================================
 // RUN ASYNC TESTS AND PRINT RESULTS
 // ============================================================
 async function runAllAsync() {
   await runFlowTests();
   await runAiLimitTests();
+  await runDataCacheTests();
 }
 
 runAllAsync().then(() => {

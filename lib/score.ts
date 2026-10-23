@@ -1,10 +1,10 @@
-import { AnalysisInput, AnalysisResult, TaskCategory } from './types';
-import { timeToMinutes } from './schedule';
+import { AnalysisInput, AnalysisResult, TaskCategory, TimeWindow } from './types';
+import { timeToMinutes, getFreeWindows } from './schedule';
 
-// TODO Step 2: these become per-user profile fields
-const DEAD_ZONE_CUTOFFS = {
-  LUNCH_BEFORE: 14 * 60,
-  DINNER_BEFORE: 21 * 60,
+// TODO Step 3: per-user meal times
+const MEAL_WINDOWS = {
+  lunch: { start: 12 * 60, end: 15 * 60 },
+  dinner: { start: 19 * 60, end: 22 * 60 },
 };
 
 const CATEGORY_DEFAULT_MINUTES: Record<TaskCategory, number> = {
@@ -20,6 +20,30 @@ interface CoreMetrics {
   freeMinutes: number;
   deadZoneMinutes: number;
   usableMinutes: number;
+}
+
+function subtractFromAvailable(
+  available: Array<[number, number]>,
+  dzStart: number,
+  dzEnd: number,
+  budget: number,
+): { deducted: number; remaining: Array<[number, number]> } {
+  if (budget <= 0 || dzStart >= dzEnd) return { deducted: 0, remaining: available };
+  let left = budget;
+  const result: Array<[number, number]> = [];
+  for (const [s, e] of available) {
+    if (left <= 0) { result.push([s, e]); continue; }
+    const os = Math.max(s, dzStart);
+    const oe = Math.min(e, dzEnd);
+    if (os >= oe) { result.push([s, e]); continue; }
+    const overlapLen = oe - os;
+    const take = Math.min(overlapLen, left);
+    left -= take;
+    if (s < os) result.push([s, os]);
+    if (take < overlapLen) result.push([os + take, oe]);
+    if (oe < e) result.push([oe, e]);
+  }
+  return { deducted: budget - left, remaining: result };
 }
 
 function computeCoreMetrics(result: AnalysisResult, input: AnalysisInput, nowMinutes: number): CoreMetrics {
@@ -44,29 +68,65 @@ function computeCoreMetrics(result: AnalysisResult, input: AnalysisInput, nowMin
 
   const freeMinutes = input.today.totalFreeMinutes;
 
+  const windows: TimeWindow[] = (input.today.freeWindows && input.today.freeWindows.length > 0)
+    ? input.today.freeWindows
+    : getFreeWindows(input.user.wakeTime, input.user.sleepTime, input.today.fixedBlocks, nowMinutes);
+
+  let available: Array<[number, number]> = windows.map(w => [timeToMinutes(w.start), timeToMinutes(w.end)]);
+
   const dz = input.deadZoneSettings;
   const wakeMin = timeToMinutes(input.user.wakeTime);
-  const noTaskBeforeMin = timeToMinutes(input.constraints.noTaskBefore);
+  let totalDeducted = 0;
 
-  let deadZoneMinutes = 0;
-  if (nowMinutes < noTaskBeforeMin) {
-    deadZoneMinutes += noTaskBeforeMin - Math.max(nowMinutes, wakeMin);
-  }
-  if (nowMinutes < DEAD_ZONE_CUTOFFS.LUNCH_BEFORE) {
-    deadZoneMinutes += dz.lunchDuration || 0;
-  }
-  if (nowMinutes < DEAD_ZONE_CUTOFFS.DINNER_BEFORE) {
-    deadZoneMinutes += dz.dinnerDuration || 0;
-  }
-  const hasGymAhead = (input.today.fixedBlocks || []).some(
-    b => b.type === 'gym' && timeToMinutes(b.end) > nowMinutes
-  );
-  if (hasGymAhead) {
-    deadZoneMinutes += dz.gymRecovery || 0;
+  // Morning routine: [wake, wake+morningRoutine] cut to now onward
+  if (dz.morningRoutine > 0) {
+    const mrStart = Math.max(wakeMin, nowMinutes);
+    const mrEnd = wakeMin + dz.morningRoutine;
+    if (mrStart < mrEnd) {
+      const r = subtractFromAvailable(available, mrStart, mrEnd, mrEnd - mrStart);
+      totalDeducted += r.deducted;
+      available = r.remaining;
+    }
   }
 
-  const usableMinutes = Math.max(0, freeMinutes - deadZoneMinutes);
-  return { requestedMinutes, freeMinutes, deadZoneMinutes, usableMinutes };
+  // Gym recovery: [gymEnd, gymEnd+gymRecovery] for each gym block ending after now
+  if (dz.gymRecovery > 0) {
+    for (const b of (input.today.fixedBlocks || [])) {
+      if (b.type === 'gym' && timeToMinutes(b.end) > nowMinutes) {
+        const gymEnd = timeToMinutes(b.end);
+        const r = subtractFromAvailable(available, gymEnd, gymEnd + dz.gymRecovery, dz.gymRecovery);
+        totalDeducted += r.deducted;
+        available = r.remaining;
+      }
+    }
+  }
+
+  // Lunch: skip if any fixed block name matches /lunch/i
+  const hasLunchBlock = (input.today.fixedBlocks || []).some(b => /lunch/i.test(b.name));
+  if (!hasLunchBlock && (dz.lunchDuration || 0) > 0) {
+    const lStart = Math.max(MEAL_WINDOWS.lunch.start, nowMinutes);
+    const lEnd = MEAL_WINDOWS.lunch.end;
+    if (lStart < lEnd) {
+      const r = subtractFromAvailable(available, lStart, lEnd, dz.lunchDuration);
+      totalDeducted += r.deducted;
+      available = r.remaining;
+    }
+  }
+
+  // Dinner: skip if any fixed block name matches /dinner/i
+  const hasDinnerBlock = (input.today.fixedBlocks || []).some(b => /dinner/i.test(b.name));
+  if (!hasDinnerBlock && (dz.dinnerDuration || 0) > 0) {
+    const dStart = Math.max(MEAL_WINDOWS.dinner.start, nowMinutes);
+    const dEnd = MEAL_WINDOWS.dinner.end;
+    if (dStart < dEnd) {
+      const r = subtractFromAvailable(available, dStart, dEnd, dz.dinnerDuration);
+      totalDeducted += r.deducted;
+      available = r.remaining;
+    }
+  }
+
+  const usableMinutes = Math.max(0, freeMinutes - totalDeducted);
+  return { requestedMinutes, freeMinutes, deadZoneMinutes: totalDeducted, usableMinutes };
 }
 
 export function computeScore(result: AnalysisResult, input: AnalysisInput, nowMinutes: number): void {

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserSettings, FixedBlock, DeadZoneSettings, DayProfile } from '@/lib/types';
-import { getSettings, saveSettings, generateId } from '@/lib/storage';
+import { getSettings, updateSettings, generateId } from '@/lib/storage';
 import { useApp } from '@/components/providers/AppProvider';
 import { DAY_NAMES, DAY_FULL_LABELS, DEFAULT_DEAD_ZONES, DEFAULT_DAY_TYPES } from '@/lib/constants';
+import { hasPendingWrites } from '@/lib/supabase/dataCache';
 import Toast from '@/components/ui/Toast';
 
 export default function SettingsPage() {
@@ -13,9 +14,10 @@ export default function SettingsPage() {
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const { email, displayName, signOut, ready } = useApp();
+  const { email, displayName, signOut, ready, hydrateCount } = useApp();
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState('');
+  const lastHydrateRef = useRef(-1);
 
   useEffect(() => {
     if (!ready) return;
@@ -23,10 +25,24 @@ export default function SettingsPage() {
     setMounted(true);
   }, [ready]);
 
+  // D2: re-read settings when cloud data arrives
+  useEffect(() => {
+    if (lastHydrateRef.current === -1) {
+      lastHydrateRef.current = hydrateCount;
+      return;
+    }
+    if (lastHydrateRef.current === hydrateCount) return;
+    lastHydrateRef.current = hydrateCount;
+    if (!mounted) return;
+    if (hasPendingWrites()) return;
+    setSettings(getSettings());
+  }, [hydrateCount, mounted]);
+
+  // D1: save via updateSettings(updater) for freshest copy
   const save = useCallback(
-    (updated: UserSettings) => {
+    (updater: (current: UserSettings) => UserSettings) => {
+      const updated = updateSettings(updater);
       setSettings(updated);
-      saveSettings(updated);
       setToastVisible(true);
     },
     []
@@ -50,62 +66,77 @@ export default function SettingsPage() {
   }
 
   const handleTimeChange = (field: 'wakeTime' | 'sleepTime', value: string) => {
-    save({ ...settings, [field]: value });
+    save(s => ({ ...s, [field]: value }));
   };
 
   const handleGymToggle = () => {
-    save({ ...settings, gym: { ...settings.gym, enabled: !settings.gym.enabled } });
+    save(s => ({ ...s, gym: { ...s.gym, enabled: !s.gym.enabled } }));
   };
 
   const handleGymChange = (field: string, value: string | number) => {
-    save({ ...settings, gym: { ...settings.gym, [field]: value } });
+    save(s => ({ ...s, gym: { ...s.gym, [field]: value } }));
   };
 
   const handleGymDayToggle = (day: string) => {
-    const sessions = { ...(settings.gym.sessions || {}) };
-    sessions[day] = sessions[day] ? null : '17:00';
-    save({ ...settings, gym: { ...settings.gym, sessions } });
+    save(s => {
+      const sessions = { ...(s.gym.sessions || {}) };
+      sessions[day] = sessions[day] ? null : '17:00';
+      return { ...s, gym: { ...s.gym, sessions } };
+    });
   };
 
   const handleGymDayTimeChange = (day: string, time: string) => {
-    const sessions = { ...(settings.gym.sessions || {}) };
-    sessions[day] = time;
-    save({ ...settings, gym: { ...settings.gym, sessions } });
+    save(s => {
+      const sessions = { ...(s.gym.sessions || {}) };
+      sessions[day] = time;
+      return { ...s, gym: { ...s.gym, sessions } };
+    });
   };
 
   const handleDayTypeChange = (day: string, profile: DayProfile) => {
-    const dayTypes = { ...(settings.dayTypes ?? DEFAULT_DAY_TYPES), [day]: profile };
-    save({ ...settings, dayTypes });
+    save(s => {
+      const dayTypes = { ...(s.dayTypes ?? DEFAULT_DAY_TYPES), [day]: profile };
+      return { ...s, dayTypes };
+    });
   };
 
   const handleAddBlock = (day: string) => {
-    const newBlock: FixedBlock = {
-      id: generateId(),
-      name: 'New Block',
-      start: '09:00',
-      end: '10:00',
-      type: 'custom',
-    };
-    const dayBlocks = [...(settings.schedule[day] || []), newBlock];
-    save({ ...settings, schedule: { ...settings.schedule, [day]: dayBlocks } });
+    save(s => {
+      const newBlock: FixedBlock = {
+        id: generateId(),
+        name: 'New Block',
+        start: '09:00',
+        end: '10:00',
+        type: 'custom',
+      };
+      const dayBlocks = [...(s.schedule[day] || []), newBlock];
+      return { ...s, schedule: { ...s.schedule, [day]: dayBlocks } };
+    });
   };
 
   const handleUpdateBlock = (day: string, blockId: string, field: string, value: string) => {
-    const dayBlocks = (settings.schedule[day] || []).map((b) =>
-      b.id === blockId ? { ...b, [field]: value } : b
-    );
-    save({ ...settings, schedule: { ...settings.schedule, [day]: dayBlocks } });
+    save(s => {
+      const dayBlocks = (s.schedule[day] || []).map((b) =>
+        b.id === blockId ? { ...b, [field]: value } : b
+      );
+      return { ...s, schedule: { ...s.schedule, [day]: dayBlocks } };
+    });
   };
 
   const handleDeleteBlock = (day: string, blockId: string) => {
-    const dayBlocks = (settings.schedule[day] || []).filter((b) => b.id !== blockId);
-    save({ ...settings, schedule: { ...settings.schedule, [day]: dayBlocks } });
+    save(s => {
+      const dayBlocks = (s.schedule[day] || []).filter((b) => b.id !== blockId);
+      return { ...s, schedule: { ...s.schedule, [day]: dayBlocks } };
+    });
   };
 
   const deadZones = settings.deadZones ?? DEFAULT_DEAD_ZONES;
 
   const handleDeadZoneChange = (field: keyof DeadZoneSettings, value: number) => {
-    save({ ...settings, deadZones: { ...deadZones, [field]: value } });
+    save(s => {
+      const dz = s.deadZones ?? DEFAULT_DEAD_ZONES;
+      return { ...s, deadZones: { ...dz, [field]: value } };
+    });
   };
 
   const SettingsRow = ({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) => (

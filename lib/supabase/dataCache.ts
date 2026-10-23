@@ -16,6 +16,9 @@ const _listeners = new Set<Listener>();
 let _settingsTimer: ReturnType<typeof setTimeout> | null = null;
 const _failedWrites: Array<() => Promise<void>> = [];
 let _writesInFlight = 0;
+let _hydrateCount = 0;
+let _retryTimer: ReturnType<typeof setTimeout> | null = null;
+let _retryAttempt = 0;
 
 function notify() {
   _version++;
@@ -29,6 +32,16 @@ export function subscribe(fn: Listener): () => void {
 export function getVersion(): number { return _version; }
 export function isHydrated(): boolean { return _hydrated; }
 export function getUserId(): string | null { return _userId; }
+export function getHydrateCount(): number { return _hydrateCount; }
+export function hasPendingWrites(): boolean {
+  return _writesInFlight > 0 || _settingsTimer !== null || _failedWrites.length > 0;
+}
+
+export function getRetryDelay(attempt: number): number {
+  if (attempt <= 0) return 5000;
+  if (attempt === 1) return 15000;
+  return 60000;
+}
 
 export function shouldRehydrate(p: { hydrated: boolean; cachedUserId: string | null; sessionUserId: string }): boolean {
   if (!p.hydrated) return true;
@@ -58,6 +71,26 @@ async function client() {
   return getSupabaseBrowserClient();
 }
 
+function scheduleRetry(): void {
+  if (_retryTimer !== null) return;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (_failedWrites.length === 0) return;
+
+  const delay = getRetryDelay(_retryAttempt);
+  _retryTimer = setTimeout(async () => {
+    _retryTimer = null;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    _retryAttempt++;
+    const batch = [..._failedWrites]; _failedWrites.length = 0;
+    for (const fn of batch) { try { await fn(); } catch { _failedWrites.push(fn); } }
+    if (_failedWrites.length === 0) {
+      _retryAttempt = 0;
+    } else {
+      scheduleRetry();
+    }
+  }, delay);
+}
+
 // ---- writes ----
 
 export function cacheSettings(s: UserSettings): void {
@@ -65,7 +98,14 @@ export function cacheSettings(s: UserSettings): void {
   _settings = s;
   notify();
   if (_settingsTimer) clearTimeout(_settingsTimer);
-  _settingsTimer = setTimeout(() => { flushSettings(); }, 600);
+  _settingsTimer = setTimeout(() => { _settingsTimer = null; flushSettings(); }, 600);
+}
+
+export function updateCachedSettings(updater: (current: UserSettings) => UserSettings): UserSettings {
+  const current = _settings ?? normalizeSettings(EMPTY_SETTINGS);
+  const updated = updater(current);
+  cacheSettings(updated);
+  return updated;
 }
 
 async function flushSettings(): Promise<void> {
@@ -88,6 +128,7 @@ async function flushSettings(): Promise<void> {
         user_id: uid, settings: snap as unknown as Record<string, unknown>, updated_at: new Date().toISOString(),
       });
     });
+    scheduleRetry();
   } finally {
     _writesInFlight--;
   }
@@ -119,6 +160,7 @@ async function writeDayPlan(plan: DayPlan): Promise<void> {
         user_id: uid, plan_date: plan.date, plan: plan as unknown as Record<string, unknown>, updated_at: new Date().toISOString(),
       });
     });
+    scheduleRetry();
   } finally {
     _writesInFlight--;
   }
@@ -167,6 +209,7 @@ async function writeQueue(kind: 'deferred' | 'planned', dateStr: string, tasks: 
         });
       }
     });
+    scheduleRetry();
   } finally {
     _writesInFlight--;
   }
@@ -174,13 +217,13 @@ async function writeQueue(kind: 'deferred' | 'planned', dateStr: string, tasks: 
 
 // ---- hydration ----
 
-export async function hydrate(uid: string): Promise<{ ok: boolean; dbMissing?: boolean }> {
+export async function hydrate(uid: string, clientOverride?: any): Promise<{ ok: boolean; dbMissing?: boolean }> {
   if (_hydrated && _userId === uid && (_writesInFlight > 0 || _settingsTimer !== null || _failedWrites.length > 0)) {
     return { ok: true };
   }
   _userId = uid;
   try {
-    const sb = await client();
+    const sb = clientOverride ?? await client();
 
     const { data: profile, error: profErr } = await sb
       .from('profiles').select('settings, display_name').eq('user_id', uid).maybeSingle();
@@ -228,11 +271,17 @@ export async function hydrate(uid: string): Promise<{ ok: boolean; dbMissing?: b
     }
 
     _hydrated = true;
+    _hydrateCount++;
     notify();
     saveOfflineCache();
     return { ok: true };
   } catch (e) {
-    if (loadOfflineCache(uid)) { _hydrated = true; notify(); return { ok: true }; }
+    if (loadOfflineCache(uid)) {
+      _hydrated = true;
+      _hydrateCount++;
+      notify();
+      return { ok: true };
+    }
     throw e;
   }
 }
@@ -255,6 +304,8 @@ export function clear(): void {
   _dayPlans.clear(); _deferredTasks.clear(); _plannedTasks.clear();
   _hydrated = false; _failedWrites.length = 0;
   if (_settingsTimer) { clearTimeout(_settingsTimer); _settingsTimer = null; }
+  if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+  _retryAttempt = 0;
   notify();
 }
 

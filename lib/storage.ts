@@ -37,6 +37,11 @@ export function saveSettings(settings: UserSettings): void {
   cache.cacheSettings(settings);
 }
 
+export function updateSettings(updater: (current: UserSettings) => UserSettings): UserSettings {
+  if (typeof window === 'undefined') return normalizeSettings(EMPTY_SETTINGS);
+  return cache.updateCachedSettings(updater);
+}
+
 export function getDayPlan(date: Date = new Date()): DayPlan | null {
   if (typeof window === 'undefined') return null;
   return cache.getCachedDayPlan(getDateString(date));

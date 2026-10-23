@@ -12,6 +12,7 @@ interface AppContextValue {
   dbMissing: boolean;
   loadFailed: boolean;
   dataVersion: number;
+  hydrateCount: number;
   displayName: string;
   email: string;
   signOut: () => Promise<void>;
@@ -37,6 +38,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const initRef = useRef(false);
 
   const dataVersion = useSyncExternalStore(dataCache.subscribe, dataCache.getVersion, () => 0);
+  const hydrateCount = useSyncExternalStore(dataCache.subscribe, dataCache.getHydrateCount, () => 0);
 
   const initAuth = useCallback(async () => {
     if (initRef.current) return;
@@ -216,7 +218,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AppContext.Provider value={{ user, ready, offline, dbMissing, loadFailed, dataVersion, displayName, email, signOut, retryLoad }}>
+    <AppContext.Provider value={{ user, ready, offline, dbMissing, loadFailed, dataVersion, hydrateCount, displayName, email, signOut, retryLoad }}>
       {children}
       {offline && user && ready && (
         <div

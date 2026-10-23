@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { DayPlan } from '@/lib/types';
 import { getSettings, getDayPlan } from '@/lib/storage';
 import { useApp } from '@/components/providers/AppProvider';
+import { hasPendingWrites } from '@/lib/supabase/dataCache';
 import { DAY_NAMES, DAY_LABELS } from '@/lib/constants';
 import {
   getTotalFixedMinutes,
@@ -37,7 +38,7 @@ function getMiniRingColor(percent: number): string {
 }
 
 export default function WeekPage() {
-  const { ready } = useApp();
+  const { ready, hydrateCount } = useApp();
   const [mounted, setMounted] = useState(false);
   const [settings, setSettingsState] = useState<UserSettings | null>(null);
   const [weekData, setWeekData] = useState<
@@ -53,10 +54,9 @@ export default function WeekPage() {
   >([]);
   const router = useRouter();
 
-  useEffect(() => {
-    if (!ready) return;
-    const settings = getSettings();
-    setSettingsState(settings);
+  const loadWeekData = useCallback(() => {
+    const s = getSettings();
+    setSettingsState(s);
     const todayDayName = getDayName();
     const todayDow = DAY_NAMES.indexOf(todayDayName as typeof DAY_NAMES[number]);
     const now = Date.now();
@@ -66,8 +66,8 @@ export default function WeekPage() {
       const date = new Date(now + offset * 86400000);
       const dayName = DAY_NAMES[i];
       const dateStr = getDateString(date);
-      const blocks = settings.schedule[dayName] || [];
-      const wakingMin = getTotalWakingMinutes(settings.wakeTime, settings.sleepTime);
+      const blocks = s.schedule[dayName] || [];
+      const wakingMin = getTotalWakingMinutes(s.wakeTime, s.sleepTime);
       const fixedMin = getTotalFixedMinutes(blocks);
       const plan = getDayPlan(date);
       const taskMin = plan?.analysis
@@ -79,7 +79,7 @@ export default function WeekPage() {
       const fixedPercent = Math.round((fixedMin / wakingMin) * 100);
       const taskPercent = Math.round((taskMin / wakingMin) * 100);
 
-      let statusLabel = getDayLabel(dayName, settings);
+      let statusLabel = getDayLabel(dayName, s);
       if (plan?.state === 'locked') statusLabel = 'Locked';
       else if (plan?.state === 'analysis') statusLabel = 'Planned';
 
@@ -87,8 +87,27 @@ export default function WeekPage() {
     });
 
     setWeekData(data);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    loadWeekData();
     setMounted(true);
-  }, [ready]);
+  }, [ready, loadWeekData]);
+
+  // D2: re-read when cloud data arrives
+  const lastHydrateRef = useRef(-1);
+  useEffect(() => {
+    if (lastHydrateRef.current === -1) {
+      lastHydrateRef.current = hydrateCount;
+      return;
+    }
+    if (lastHydrateRef.current === hydrateCount) return;
+    lastHydrateRef.current = hydrateCount;
+    if (!mounted) return;
+    if (hasPendingWrites()) return;
+    loadWeekData();
+  }, [hydrateCount, mounted, loadWeekData]);
 
   if (!mounted) {
     return (

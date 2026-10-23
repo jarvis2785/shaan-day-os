@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Task, AnalysisResult, DayState, DayPlan } from '@/lib/types';
 import { buildAnalysisInput, analyzeDay } from '@/lib/analysis';
@@ -15,6 +15,7 @@ import {
   clearPlannedTasks,
 } from '@/lib/storage';
 import { useApp } from '@/components/providers/AppProvider';
+import { hasPendingWrites } from '@/lib/supabase/dataCache';
 import {
   formatDate,
   getDateString,
@@ -31,7 +32,7 @@ import ExecutionView from '@/components/views/ExecutionView';
 
 export default function TodayPage() {
   const router = useRouter();
-  const { ready } = useApp();
+  const { ready, hydrateCount } = useApp();
   const [state, setState] = useState<DayState>('input');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -83,6 +84,28 @@ export default function TodayPage() {
     loadDayState(dateStr);
     setMounted(true);
   }, [ready, loadDayState]);
+
+  // D2: re-read when cloud data arrives
+  const lastHydrateRef = useRef(-1);
+  const sheetOpenRef = useRef(false);
+  sheetOpenRef.current = sheetOpen;
+  const loadingRef = useRef(false);
+  loadingRef.current = loading;
+  const reanalyzingRef = useRef(false);
+  reanalyzingRef.current = reanalyzing;
+
+  useEffect(() => {
+    if (lastHydrateRef.current === -1) {
+      lastHydrateRef.current = hydrateCount;
+      return;
+    }
+    if (lastHydrateRef.current === hydrateCount) return;
+    lastHydrateRef.current = hydrateCount;
+    if (!mounted) return;
+    if (sheetOpenRef.current || loadingRef.current || reanalyzingRef.current) return;
+    if (hasPendingWrites()) return;
+    loadDayState(getDateString());
+  }, [hydrateCount, mounted, loadDayState]);
 
   useEffect(() => {
     const interval = setInterval(() => {
